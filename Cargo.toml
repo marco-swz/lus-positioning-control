@@ -1,0 +1,8 @@
+[package]
+name = "zaber-opcua-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+opcua = "0.12.0"
+zproto = "0.3.4"
