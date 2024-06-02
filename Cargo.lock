@@ -1190,9 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "zproto"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc6ea47a54857c9e17386bd211049a6752ccde89f53e1031d3da27259b0040b0"
+version = "0.4.0-pre"
 dependencies = [
  "log",
  "paste",

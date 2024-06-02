@@ -1,12 +1,12 @@
 use std::{net::TcpStream, sync::{Arc, Mutex}};
 
 use opcua::server::prelude::*;
-use zproto::binary::{command::RETURN_CURRENT_POSITION, Message, Port};
+use zproto::binary::{command::{RETURN_CURRENT_POSITION, RETURN_STATUS},Port};
 
 mod methods;
 use methods::add_methods;
 
-fn add_variables(server: &mut Server, ns: u16, name: &str, zaber: Arc<Mutex<Port<TcpStream>>>) -> NodeId {
+fn add_variables(server: &mut Server, ns: u16, name: &str, zaber: Arc<Mutex<Port<'static, TcpStream>>>) -> NodeId {
     let address_space = server.address_space();
 
     let node_position = NodeId::new(ns, "position");
@@ -32,17 +32,28 @@ fn add_variables(server: &mut Server, ns: u16, name: &str, zaber: Arc<Mutex<Port
         folder_id
     };
 
-    let zaber = Arc::clone(&zaber);
+    //let zaber: Arc<Mutex<Port<TcpStream>>> = Arc::clone(&zaber);
     server.add_polling_action(1000, move || {
-        let mut address_space = address_space.write();
 
         let mut zaber = zaber.lock().unwrap();
+        let mut pos = 0;
+        let mut busy = false;
 
         let now = DateTime::now();
         let status = match zaber.tx_recv((0, RETURN_CURRENT_POSITION)) {
             Ok(resp) => match resp.data() {
-                Ok(pos) => {
-                    let _ = address_space.set_variable_value(node_position.clone(), pos, &now, &now);
+                Ok(p) => {
+                    pos = p;
+                    "Ok".into()
+                }
+                Err(e) => e.to_string(),
+            },
+            Err(e) => e.to_string(),
+        };
+        let status = match zaber.tx_recv((0, RETURN_STATUS)) {
+            Ok(resp) => match resp.data() {
+                Ok(p) => {
+                    //busy = resp;
                     "Ok".into()
                 }
                 Err(e) => e.to_string(),
@@ -51,6 +62,8 @@ fn add_variables(server: &mut Server, ns: u16, name: &str, zaber: Arc<Mutex<Port
         };
 
 
+        let mut address_space = address_space.write();
+        let _ = address_space.set_variable_value(node_position.clone(), pos, &now, &now);
         let _ = address_space.set_variable_value(node_busy.clone(), true, &now, &now);
         let _ = address_space.set_variable_value(node_status.clone(), status, &now, &now);
     });
@@ -84,7 +97,7 @@ fn main() {
             .unwrap()
     };
 
-    let node_id = add_variables(&mut server, ns, "cross-slide", zaber);
+    let node_id = add_variables(&mut server, ns, "cross-slide", Arc::clone(&zaber));
     add_methods(&mut server, ns, node_id, zaber);
 
 

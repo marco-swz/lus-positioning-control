@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 opcua = "0.12.0"
-zproto = "0.3.4"
+#zproto = "0.3.4"
+zproto = { path = "../zproto" }
