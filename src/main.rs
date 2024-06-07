@@ -1,12 +1,23 @@
-use std::{net::TcpStream, sync::{Arc, Mutex}};
+use std::{
+    net::TcpStream,
+    sync::{Arc, Mutex},
+};
 
 use opcua::server::prelude::*;
-use zproto::binary::{command::{RETURN_CURRENT_POSITION, RETURN_STATUS},Port};
+use zproto::binary::{
+    command::{RETURN_CURRENT_POSITION, RETURN_STATUS},
+    Port, SendCallbacks,
+};
 
 mod methods;
 use methods::add_methods;
 
-fn add_variables(server: &mut Server, ns: u16, name: &str, zaber: Arc<Mutex<Port<'static, TcpStream>>>) -> NodeId {
+fn add_variables(
+    server: &mut Server,
+    ns: u16,
+    name: &str,
+    zaber: Arc<Mutex<Port<'static, TcpStream, SendCallbacks<'static>>>>,
+) -> NodeId {
     let address_space = server.address_space();
 
     let node_position = NodeId::new(ns, "position");
@@ -32,9 +43,7 @@ fn add_variables(server: &mut Server, ns: u16, name: &str, zaber: Arc<Mutex<Port
         folder_id
     };
 
-    //let zaber: Arc<Mutex<Port<TcpStream>>> = Arc::clone(&zaber);
     server.add_polling_action(1000, move || {
-
         let mut zaber = zaber.lock().unwrap();
         let mut pos = 0;
         let mut busy = false;
@@ -61,7 +70,6 @@ fn add_variables(server: &mut Server, ns: u16, name: &str, zaber: Arc<Mutex<Port
             Err(e) => e.to_string(),
         };
 
-
         let mut address_space = address_space.write();
         let _ = address_space.set_variable_value(node_position.clone(), pos, &now, &now);
         let _ = address_space.set_variable_value(node_busy.clone(), true, &now, &now);
@@ -76,7 +84,10 @@ fn main() {
         .application_name("zaber-opcua")
         .application_uri("urn:zaber-opcua")
         .discovery_urls(vec!["/".into()])
-        .endpoint("none", ServerEndpoint::new_none("/", &[ANONYMOUS_USER_TOKEN_ID.into()]))
+        .endpoint(
+            "none",
+            ServerEndpoint::new_none("/", &[ANONYMOUS_USER_TOKEN_ID.into()]),
+        )
         .trust_client_certs()
         .multi_threaded_executor()
         .create_sample_keypair(false)
@@ -86,20 +97,18 @@ fn main() {
         .unwrap();
 
     //let mut zaber = ascii::Port::open_serial("/dev/ttyACM0").unwrap();
-    let mut zaber = Port::open_tcp("/dev/ttyACM0").unwrap();
+    let zaber = Port::open_tcp("/dev/ttyACM0").unwrap();
+    let zaber = zaber.try_into_send().unwrap();
     let zaber = Arc::new(Mutex::new(zaber));
 
     let ns = {
         let address_space = server.address_space();
         let mut address_space = address_space.write();
-        address_space
-            .register_namespace("urn:zaber-opcua")
-            .unwrap()
+        address_space.register_namespace("urn:zaber-opcua").unwrap()
     };
 
     let node_id = add_variables(&mut server, ns, "cross-slide", Arc::clone(&zaber));
     add_methods(&mut server, ns, node_id, zaber);
-
 
     server.run();
 }

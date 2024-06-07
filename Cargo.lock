@@ -1190,7 +1190,8 @@ dependencies = [
 
 [[package]]
 name = "zproto"
-version = "0.4.0-pre"
+version = "0.3.4"
+source = "git+https://github.com/stphnt/zproto?branch=sendable-port#2c4b81280cfa32e0ad95ccae62f71f936bd34130"
 dependencies = [
  "log",
  "paste",

@@ -1,7 +1,7 @@
 use std::{net::TcpStream, sync::{Arc, Mutex}};
 
 use opcua::server::{callbacks, prelude::*};
-use zproto::binary::Port;
+use zproto::binary::{Port, SendCallbacks};
 
 struct CbStop;
 impl callbacks::Method for CbStop {
@@ -106,7 +106,7 @@ impl callbacks::Method for CbMoveVelocity {
     }
 }
 
-pub fn add_methods(server: &mut Server, ns: u16, node_id: NodeId, zaber: Arc<Mutex<Port<TcpStream>>>) {
+pub fn add_methods(server: &mut Server, ns: u16, node_id: NodeId, zaber: Arc<Mutex<Port<TcpStream, SendCallbacks>>>) {
     let address_space = server.address_space();
     let mut address_space = address_space.write();
 
