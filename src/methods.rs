@@ -1,128 +1,233 @@
-use std::{net::TcpStream, sync::{Arc, Mutex}};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use opcua::server::{callbacks, prelude::*};
-use zproto::binary::{Port, SendCallbacks};
+use zproto::{ascii::SendPort, backend::Serial};
 
-struct CbStop;
-impl callbacks::Method for CbStop {
-    fn call(
-        &mut self,
-        _session_id: &NodeId,
-        _session_manager: std::sync::Arc<opcua::sync::RwLock<opcua::server::session::SessionManager>>,
-        _request: &CallMethodRequest,
-    ) -> Result<CallMethodResult, StatusCode> {
+type Zaber<'a> = MutexGuard<'a, SendPort<'static, Serial>>;
 
-        println!("stop");
-
-        return Ok(CallMethodResult{
-            status_code: StatusCode::Good,
-            input_argument_results: None,
-            input_argument_diagnostic_infos: None,
-            output_arguments: Some(vec![Variant::String("Ok".into())]),
-        });
-    }
+struct ZaberCallback {
+    zaber: Arc<Mutex<SendPort<'static, Serial>>>,
+    device_id: u8,
+    action: fn(&mut Zaber, &CallMethodRequest, u8) -> (StatusCode, String),
 }
-
-
-struct CbMoveAbsolute;
-impl callbacks::Method for CbMoveAbsolute {
+impl callbacks::Method for ZaberCallback {
     fn call(
         &mut self,
         _session_id: &NodeId,
-        _session_manager: std::sync::Arc<opcua::sync::RwLock<opcua::server::session::SessionManager>>,
+        _session_manager: std::sync::Arc<
+            opcua::sync::RwLock<opcua::server::session::SessionManager>,
+        >,
         request: &CallMethodRequest,
     ) -> Result<CallMethodResult, StatusCode> {
-        let Some(ref args) = request.input_arguments else {
-            return Err(StatusCode::BadArgumentsMissing);
+        let Ok(mut zaber) = self.zaber.lock() else {
+            return Err(StatusCode::BadInternalError);
         };
 
-        let Some(pos) = args.get(0) else {
-            return Err(StatusCode::BadArgumentsMissing);
-        };
-        let Variant::Double(pos) = pos else {
-            return Err(StatusCode::BadInvalidArgument);
-        };
+        let (status_code, status_text) = (self.action)(&mut zaber, request, self.device_id);
 
-        let Some(vel) = args.get(1) else {
-            return Err(StatusCode::BadArgumentsMissing);
-        };
-        let Variant::Double(vel) = vel else {
-            return Err(StatusCode::BadInvalidArgument);
-        };
+        drop(zaber);
 
-        let Some(acc) = args.get(2) else {
-            return Err(StatusCode::BadArgumentsMissing);
-        };
-        let Variant::Double(acc) = acc else {
-            return Err(StatusCode::BadInvalidArgument);
-        };
-
-        println!("move_absolute: {}, {}, {}", pos, vel, acc);
-
-        return Ok(CallMethodResult{
-            status_code: StatusCode::Good,
+        return Ok(CallMethodResult {
+            status_code,
             input_argument_results: None,
             input_argument_diagnostic_infos: None,
-            output_arguments: Some(vec![Variant::String("Ok".into())]),
+            output_arguments: Some(vec![Variant::String(status_text.into())]),
         });
     }
 }
 
-
-struct CbMoveVelocity;
-impl callbacks::Method for CbMoveVelocity {
-    fn call(
-        &mut self,
-        _session_id: &NodeId,
-        _session_manager: std::sync::Arc<opcua::sync::RwLock<opcua::server::session::SessionManager>>,
-        request: &CallMethodRequest,
-    ) -> Result<CallMethodResult, StatusCode> {
-        let Some(ref args) = request.input_arguments else {
-            return Err(StatusCode::BadArgumentsMissing);
-        };
-
-        let Some(pos) = args.get(0) else {
-            return Err(StatusCode::BadArgumentsMissing);
-        };
-        let Variant::Double(pos) = pos else {
-            return Err(StatusCode::BadInvalidArgument);
-        };
-
-        let Some(vel) = args.get(1) else {
-            return Err(StatusCode::BadArgumentsMissing);
-        };
-        let Variant::Double(vel) = vel else {
-            return Err(StatusCode::BadInvalidArgument);
-        };
-
-        println!("move_velocity: {}, {}", pos, vel);
-
-        return Ok(CallMethodResult{
-            status_code: StatusCode::Good,
-            input_argument_results: None,
-            input_argument_diagnostic_infos: None,
-            output_arguments: Some(vec![Variant::String("Ok".into())]),
-        });
-    }
+fn handle_stop(
+    zaber: &mut Zaber,
+    _request: &CallMethodRequest,
+    device_id: u8,
+) -> (StatusCode, String) {
+    let (status_code, status_text) = match zaber.command_reply((device_id, "stop")) {
+        Ok(_) => (StatusCode::Good, "Ok".into()),
+        Err(e) => (StatusCode::BadInternalError, e.to_string()),
+    };
+    return (status_code, status_text);
 }
 
-pub fn add_methods(server: &mut Server, ns: u16, node_id: NodeId, zaber: Arc<Mutex<Port<TcpStream, SendCallbacks>>>) {
+fn handle_move_absolute(
+    zaber: &mut Zaber,
+    request: &CallMethodRequest,
+    device_id: u8,
+) -> (StatusCode, String) {
+    let Some(ref args) = request.input_arguments else {
+        return (StatusCode::BadArgumentsMissing, "Missing input arguments".into());
+    };
+
+    let Some(pos) = args.get(0) else {
+        return (StatusCode::BadArgumentsMissing, "Missing position argument".into());
+    };
+    let Variant::Double(pos) = pos else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert position into a number".into());
+    };
+
+    let Some(vel) = args.get(1) else {
+        return (StatusCode::BadArgumentsMissing, "Missing velocity argument".into());
+    };
+    let Variant::Double(vel) = vel else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert velocity into a number".into());
+    };
+
+    let Some(acc) = args.get(2) else {
+        return (StatusCode::BadArgumentsMissing, "Missing acceleration argument".into());
+    };
+    let Variant::Double(acc) = acc else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert acceleration into a number".into());
+    };
+
+    let cmd = format!("move abs {} {} {}", pos, vel, acc);
+    let (status_code, status_text) = match zaber.command_reply((device_id, cmd)) {
+        Ok(_) => (StatusCode::Good, "Ok".into()),
+        Err(e) => (StatusCode::BadInternalError, e.to_string()),
+    };
+    return (status_code, status_text);
+}
+
+fn handle_move_relative(
+    zaber: &mut Zaber,
+    request: &CallMethodRequest,
+    device_id: u8,
+) -> (StatusCode, String) {
+    let Some(ref args) = request.input_arguments else {
+        return (StatusCode::BadArgumentsMissing, "Missing input arguments".into());
+    };
+
+    let Some(pos) = args.get(0) else {
+        return (StatusCode::BadArgumentsMissing, "Missing position argument".into());
+    };
+    let Variant::Double(pos) = pos else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert position into a number".into());
+    };
+
+    let Some(vel) = args.get(1) else {
+        return (StatusCode::BadArgumentsMissing, "Missing velocity argument".into());
+    };
+    let Variant::Double(vel) = vel else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert velocity into a number".into());
+    };
+
+    let Some(acc) = args.get(2) else {
+        return (StatusCode::BadArgumentsMissing, "Missing acceleration argument".into());
+    };
+    let Variant::Double(acc) = acc else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert acceleration into a number".into());
+    };
+
+    let cmd = format!("move rel {} {} {}", pos, vel, acc);
+    let (status_code, status_text) = match zaber.command_reply((device_id, cmd)) {
+        Ok(_) => (StatusCode::Good, "Ok".into()),
+        Err(e) => (StatusCode::BadInternalError, e.to_string()),
+    };
+    return (status_code, status_text);
+}
+
+fn handle_move_velocity(
+    zaber: &mut Zaber,
+    request: &CallMethodRequest,
+    device_id: u8,
+) -> (StatusCode, String) {
+    let Some(ref args) = request.input_arguments else {
+        return (StatusCode::BadArgumentsMissing, "Missing input arguments".into());
+    };
+
+    let Some(pos) = args.get(0) else {
+        return (StatusCode::BadArgumentsMissing, "Missing position argument".into());
+    };
+    let Variant::Double(pos) = pos else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert position into a number".into());
+    };
+
+    let Some(vel) = args.get(1) else {
+        return (StatusCode::BadArgumentsMissing, "Missing velocity argument".into());
+    };
+    let Variant::Double(vel) = vel else {
+        return (StatusCode::BadInvalidArgument, "Cannot convert velocity into a number".into());
+    };
+
+    println!("move_velocity: {}, {}", pos, vel);
+    let cmd = format!("move vel {} {}", pos, vel);
+    let (status_code, status_text) = match zaber.command_reply((device_id, cmd)) {
+        Ok(_) => (StatusCode::Good, "Ok".into()),
+        Err(e) => (StatusCode::BadInternalError, e.to_string()),
+    };
+    return (status_code, status_text);
+}
+
+fn handle_command(
+    zaber: &mut Zaber,
+    request: &CallMethodRequest,
+    _device_id: u8,
+) -> (StatusCode, String) {
+    let Some(ref args) = request.input_arguments else {
+        return (StatusCode::BadArgumentsMissing, "Missing input arguments".into());
+    };
+
+    let Some(cmd) = args.get(0) else {
+        return (StatusCode::BadArgumentsMissing, "Missing command argument".into());
+    };
+
+    println!("command: {}", cmd);
+    let (status_code, status_text) = match zaber.command_reply(cmd.to_string()) {
+        Ok(_) => (StatusCode::Good, "Ok".into()),
+        Err(e) => (StatusCode::BadInternalError, e.to_string()),
+    };
+    return (status_code, status_text);
+}
+
+pub fn add_methods(
+    server: &mut Server,
+    ns: u16,
+    zaber: Arc<Mutex<SendPort<'static, Serial>>>,
+) {
     let address_space = server.address_space();
     let mut address_space = address_space.write();
 
-    let node_stop = NodeId::new(ns, "stop");
-    MethodBuilder::new(&node_stop, "stop", "stop")
-        .component_of(node_id.clone())
-        .input_args(
-            &mut address_space,
-            &[],
+    MethodBuilder::new(&NodeId::new(ns, "command"), "command", "command")
+        .input_args(&mut address_space,
+            &[
+                ("Zaber command", DataTypeId::String).into(),
+            ]
         )
-        .output_args(&mut address_space, &[("response status", DataTypeId::String).into()])
-        .callback(Box::new(CbStop))
+        .output_args(
+            &mut address_space,
+            &[("response status", DataTypeId::String).into()],
+        )
+        .callback(Box::new(ZaberCallback{
+            zaber: Arc::clone(&zaber),
+            device_id: 0,
+            action: handle_command,
+        }))
+        .insert(&mut address_space);
+}
+
+pub fn add_axis_methods(
+    server: &mut Server,
+    ns: u16,
+    node_id: NodeId,
+    zaber: Arc<Mutex<SendPort<'static, Serial>>>,
+    device_id: u8,
+) {
+    let address_space = server.address_space();
+    let mut address_space = address_space.write();
+
+    MethodBuilder::new(&NodeId::new(ns, "stop"), "stop", "stop")
+        .component_of(node_id.clone())
+        .input_args(&mut address_space, &[])
+        .output_args(
+            &mut address_space,
+            &[("response status", DataTypeId::String).into()],
+        )
+        .callback(Box::new(ZaberCallback{
+            zaber: Arc::clone(&zaber),
+            device_id,
+            action: handle_stop,
+        }))
         .insert(&mut address_space);
 
-    let node_move_abs = NodeId::new(ns, "move_absolute");
-    MethodBuilder::new(&node_move_abs, "move_absolute", "move_absolute")
+    MethodBuilder::new(&NodeId::new(ns, "move_absolute"), "move_absolute", "move_absolute")
         .component_of(node_id.clone())
         .input_args(
             &mut address_space,
@@ -132,12 +237,18 @@ pub fn add_methods(server: &mut Server, ns: u16, node_id: NodeId, zaber: Arc<Mut
                 ("acceleration [mm/s^2]", DataTypeId::Double).into(),
             ],
         )
-        .output_args(&mut address_space, &[("response status", DataTypeId::String).into()])
-        .callback(Box::new(CbMoveAbsolute))
+        .output_args(
+            &mut address_space,
+            &[("response status", DataTypeId::String).into()],
+        )
+        .callback(Box::new(ZaberCallback{
+            zaber: Arc::clone(&zaber),
+            device_id,
+            action: handle_move_absolute,
+        }))
         .insert(&mut address_space);
 
-    let node_move_rel = NodeId::new(ns, "move_relative");
-    MethodBuilder::new(&node_move_rel, "move_relative", "move_relative")
+    MethodBuilder::new(&NodeId::new(ns, "move_relative"), "move_relative", "move_relative")
         .component_of(node_id.clone())
         .input_args(
             &mut address_space,
@@ -147,12 +258,18 @@ pub fn add_methods(server: &mut Server, ns: u16, node_id: NodeId, zaber: Arc<Mut
                 ("acceleration [mm/s^2]", DataTypeId::Double).into(),
             ],
         )
-        .output_args(&mut address_space, &[("response status", DataTypeId::String).into()])
-        .callback(Box::new(CbMoveAbsolute))
+        .output_args(
+            &mut address_space,
+            &[("response status", DataTypeId::String).into()],
+        )
+        .callback(Box::new(ZaberCallback{
+            zaber: Arc::clone(&zaber),
+            device_id,
+            action: handle_move_relative,
+        }))
         .insert(&mut address_space);
 
-    let node_move_vel = NodeId::new(ns, "move_velocity");
-    MethodBuilder::new(&node_move_vel, "move_velocity", "move_velocity")
+    MethodBuilder::new(&NodeId::new(ns, "move_velocity"), "move_velocity", "move_velocity")
         .component_of(node_id)
         .input_args(
             &mut address_space,
@@ -161,8 +278,14 @@ pub fn add_methods(server: &mut Server, ns: u16, node_id: NodeId, zaber: Arc<Mut
                 ("acceleration [mm/s^2]", DataTypeId::Double).into(),
             ],
         )
-        .output_args(&mut address_space, &[("response status", DataTypeId::String).into()])
-        .callback(Box::new(CbMoveVelocity))
+        .output_args(
+            &mut address_space,
+            &[("response status", DataTypeId::String).into()],
+        )
+        .callback(Box::new(ZaberCallback{
+            zaber: Arc::clone(&zaber),
+            device_id,
+            action: handle_move_velocity,
+        }))
         .insert(&mut address_space);
 }
-

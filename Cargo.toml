@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 opcua = "0.12.0"
-#zproto = "0.3.4"
-zproto = { git = "https://github.com/stphnt/zproto", branch = "sendable-port" }
+zproto = "0.3.5"
+

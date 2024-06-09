@@ -1190,8 +1190,9 @@ dependencies = [
 
 [[package]]
 name = "zproto"
-version = "0.3.4"
-source = "git+https://github.com/stphnt/zproto?branch=sendable-port#2c4b81280cfa32e0ad95ccae62f71f936bd34130"
+version = "0.3.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "907d38ee422614fe02ab05c1879d427f86617f663096dc34bd4156ac851255a0"
 dependencies = [
  "log",
  "paste",
