@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use opcua::server::{callbacks, prelude::*};
 use zproto::{ascii::SendPort, backend::Serial};
 
-type Zaber<'a> = MutexGuard<'a, SendPort<'static, Serial>>;
+type Zaber = SendPort<'static, Serial>;
 
 struct ZaberCallback {
-    zaber: Arc<Mutex<SendPort<'static, Serial>>>,
+    zaber: Arc<Mutex<Option<SendPort<'static, Serial>>>>,
     device_id: u8,
     action: fn(&mut Zaber, &CallMethodRequest, u8) -> (StatusCode, String),
 }
@@ -23,7 +23,11 @@ impl callbacks::Method for ZaberCallback {
             return Err(StatusCode::BadInternalError);
         };
 
-        let (status_code, status_text) = (self.action)(&mut zaber, request, self.device_id);
+        let Some(ref mut zaber) = *zaber else {
+            return Err(StatusCode::BadInternalError);
+        };
+
+        let (status_code, status_text) = (self.action)(zaber, request, self.device_id);
 
         drop(zaber);
 
@@ -180,7 +184,7 @@ fn handle_command(
 pub fn add_methods(
     server: &mut Server,
     ns: u16,
-    zaber: Arc<Mutex<SendPort<'static, Serial>>>,
+    zaber: Arc<Mutex<Option<SendPort<'static, Serial>>>>,
 ) {
     let address_space = server.address_space();
     let mut address_space = address_space.write();
@@ -207,7 +211,7 @@ pub fn add_axis_methods(
     server: &mut Server,
     ns: u16,
     node_id: NodeId,
-    zaber: Arc<Mutex<SendPort<'static, Serial>>>,
+    zaber: Arc<Mutex<Option<SendPort<'static, Serial>>>>,
     device_id: u8,
 ) {
     let address_space = server.address_space();

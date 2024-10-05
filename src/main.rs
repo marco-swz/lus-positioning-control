@@ -1,76 +1,106 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use crossbeam_queue::ArrayQueue;
 use opcua::server::prelude::*;
-use zproto::{
-    ascii::{Port, SendPort, Status},
-    backend::Serial,
-};
 
 mod methods;
 use methods::{add_axis_methods, add_methods};
 
+mod control;
+use control::{connect_state, ControlState, StateQueue, ZaberState};
+
 fn add_axis_variables(
     server: &mut Server,
     ns: u16,
-    name: &str,
-    zaber: Arc<Mutex<SendPort<'static, Serial>>>,
-    slide_id: u8,
-) -> NodeId {
+    zaber: StateQueue,
+) -> (NodeId, NodeId) {
     let address_space = server.address_space();
 
-    let node_position = NodeId::new(ns, "position");
+    let node_position_cross = NodeId::new(ns, "position");
+    let node_busy_cross = NodeId::new(ns, "busy");
+    let node_position_parallel = NodeId::new(ns, "position");
+    let node_busy_parallel = NodeId::new(ns, "busy");
     let node_status = NodeId::new(ns, "status");
-    let node_busy = NodeId::new(ns, "busy");
 
-    let folder_id = {
+    let root_id = NodeId::objects_folder_id();
+
+    let folders = {
         let mut address_space = address_space.write();
 
-        let folder_id = address_space
-            .add_folder(name, name, &NodeId::objects_folder_id())
+        let folder_cross_id = address_space
+            .add_folder("cross-slide", "cross-slide", &root_id)
             .unwrap();
-
         let _ = address_space.add_variables(
             vec![
-                Variable::new(&node_position, "position", "position [mm]", 0 as f64),
-                Variable::new(&node_status, "status", "status", UAString::from("Init")),
-                Variable::new(&node_busy, "busy", "busy", false),
+                Variable::new(&node_position_cross, "position", "position [mm]", 0 as f64),
+                Variable::new(&node_busy_cross, "busy", "busy", false),
             ],
-            &folder_id,
+            &folder_cross_id,
         );
 
-        folder_id
+        let folder_parallel_id = address_space
+            .add_folder("parallel-slide", "parallel-slide", &root_id)
+            .unwrap();
+        let _ = address_space.add_variables(
+            vec![
+                Variable::new(&node_position_parallel, "position", "position [mm]", 0 as f64),
+                Variable::new(&node_busy_parallel, "busy", "busy", false),
+            ],
+            &folder_parallel_id,
+        );
+
+        address_space.add_variables(
+            vec![
+                Variable::new(&node_status, "status", "status", UAString::from("Init")),
+            ], &root_id);
+
+        (folder_cross_id, folder_parallel_id)
     };
 
     server.add_polling_action(1000, move || {
-        let mut zaber = zaber.lock().unwrap();
-        let mut pos = 0.;
-        let mut busy = false;
-
-        let now = DateTime::now();
-        let status = match zaber.command_reply((slide_id, "get pos")) {
-            Ok(resp) => match resp.data().parse::<f64>() {
-                Ok(p) => {
-                    pos = p;
-                    busy = resp.status() == Status::Busy;
-                    "Ok".into()
-                }
-                Err(e) => e.to_string(),
-            },
-            Err(e) => e.to_string(),
+        let Some(zaber_state) = zaber.pop() else {
+            return;
         };
 
-        drop(zaber);
+        let now = DateTime::now();
 
         let mut address_space = address_space.write();
-        let _ = address_space.set_variable_value(node_position.clone(), pos, &now, &now);
-        let _ = address_space.set_variable_value(node_busy.clone(), busy, &now, &now);
-        let _ = address_space.set_variable_value(node_status.clone(), status, &now, &now);
+        let _ = address_space.set_variable_value(
+            node_position_parallel.clone(),
+            zaber_state.position_parallel,
+            &now,
+            &now,
+        );
+        let _ = address_space.set_variable_value(
+            node_busy_parallel.clone(),
+            zaber_state.busy_parallel,
+            &now,
+            &now,
+        );
+        let _ = address_space.set_variable_value(
+            node_position_cross.clone(),
+            zaber_state.position_cross,
+            &now,
+            &now,
+        );
+        let _ = address_space.set_variable_value(
+            node_busy_cross.clone(),
+            zaber_state.busy_cross,
+            &now,
+            &now,
+        );
+        let _ = address_space.set_variable_value(
+            node_status.clone(),
+            format!("{:?}", zaber_state.control_state),
+            &now,
+            &now,
+        );
     });
 
-    return folder_id;
+    return folders;
 }
 
-fn main() {
+fn run_opcua(zaber_state: StateQueue) {
     let mut server: Server = ServerBuilder::new()
         .application_name("zaber-opcua")
         .application_uri("urn:zaber-opcua")
@@ -87,21 +117,35 @@ fn main() {
         .server()
         .unwrap();
 
-    let zaber = Port::open_serial("/dev/ttyACM0").unwrap();
-    //let zaber = Port::open_tcp("/dev/ttyACM0").unwrap();
-    let zaber = zaber.try_into_send().unwrap();
-    let zaber = Arc::new(Mutex::new(zaber));
-
     let ns = {
         let address_space = server.address_space();
         let mut address_space = address_space.write();
         address_space.register_namespace("urn:zaber-opcua").unwrap()
     };
 
-    add_methods(&mut server, ns, Arc::clone(&zaber));
+    //add_methods(&mut server, ns, zaber_state);
 
-    let node_id = add_axis_variables(&mut server, ns, "cross-slide", Arc::clone(&zaber), 1);
-    add_axis_methods(&mut server, ns, node_id, zaber, 1);
+    let _node_ids = add_axis_variables(&mut server, ns, Arc::clone(&zaber_state));
+    //add_axis_methods(&mut server, ns, node_id, zaber, 1);
 
     server.run();
+}
+
+fn main() {
+    let queue = Arc::new(ArrayQueue::new(1));
+
+    let zaber_state = ZaberState {
+        position_cross: 0.,
+        position_parallel: 0.,
+        busy_cross: false,
+        busy_parallel: false,
+        control_state: ControlState::PreConnect,
+    };
+
+    let _ = queue.force_push(zaber_state);
+
+    let queue_clone = Arc::clone(&queue);
+    std::thread::spawn(|| run_opcua(queue_clone));
+
+    connect_state(queue);
 }
