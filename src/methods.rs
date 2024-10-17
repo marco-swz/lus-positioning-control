@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use opcua::server::{callbacks, prelude::*};
-use zproto::{ascii::SendPort, backend::Serial};
+use zproto::{ascii::port::SendPort, backend::Serial};
 
 type Zaber = SendPort<'static, Serial>;
 
