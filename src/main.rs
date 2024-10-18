@@ -134,18 +134,20 @@ fn run_opcua(zaber_state: StateQueue) {
 fn main() {
     let queue = Arc::new(ArrayQueue::new(1));
 
-    let zaber_state = ZaberState {
+    let state = ZaberState {
+        voltage_gleeble: 0.,
         position_cross: 0.,
         position_parallel: 0.,
         busy_cross: false,
         busy_parallel: false,
         control_state: ControlState::PreConnect,
+        error: None,
     };
 
-    let _ = queue.force_push(zaber_state);
+    let _ = queue.force_push(state.clone());
 
     let queue_clone = Arc::clone(&queue);
     std::thread::spawn(|| run_opcua(queue_clone));
 
-    connect_state(queue);
+    connect_state(queue, state);
 }
