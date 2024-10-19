@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::{Arc, Condvar, Mutex, MutexGuard}, time::Duration};
 
 use crossbeam_queue::ArrayQueue;
 use zproto::{
@@ -7,7 +7,15 @@ use zproto::{
 };
 
 type ZaberConn<T> = Port<'static, T>;
-pub type StateQueue = Arc<ArrayQueue<ZaberState>>;
+pub type StateChannel = Arc<ArrayQueue<SharedState>>;
+pub type StopChannel = Arc<(Mutex<bool>, Condvar)>;
+
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub cycle_time_ms: u64,
+    pub voltage_min: f64,
+    pub voltage_max: f64,
+}
 
 #[derive(Clone, Debug)]
 pub enum ControlState {
@@ -19,7 +27,7 @@ pub enum ControlState {
 }
 
 #[derive(Clone, Debug)]
-pub struct ZaberState {
+pub struct SharedState {
     pub voltage_gleeble: f64,
     pub position_cross: f64,
     pub position_parallel: f64,
@@ -29,14 +37,24 @@ pub struct ZaberState {
     pub error: Option<String>,
 }
 
-pub fn connect_state(state_queue: StateQueue, mut state: ZaberState) {
-    state.control_state = ControlState::Connect;
-    state_queue.force_push(state.clone());
+#[derive(Clone, Debug)]
+pub struct ExecState {
+    pub shared: SharedState,
+    pub out_channel: StateChannel,
+    pub stop_channel: StopChannel,
+    pub config: Config, 
+}
+
+
+pub fn connect_state(mut state: ExecState) {
 
     loop {
+        state.shared.control_state = ControlState::Connect;
+        state.out_channel.force_push(state.shared.clone());
+
         match Port::open_serial("/dev/ttyACM0") {
             Ok(z) => {
-                (_, state) = init_state(z, state, Arc::clone(&state_queue)); 
+                (state, _) = init_state(state, z); 
             },
             Err(e) => {
                 println!("{}", e);
@@ -44,29 +62,37 @@ pub fn connect_state(state_queue: StateQueue, mut state: ZaberState) {
             },
         };
 
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        let (lock, cvar) = &*state.stop_channel;
+        let mut stop = lock.lock().unwrap();
+        while !*stop {
+            let result = cvar.wait_timeout(stop, Duration::from_secs(5)).unwrap();
+            stop = result.0;
+        }
+        drop(stop);
     }
 }
 
-fn init_state<T: Backend>(mut zaber_conn: ZaberConn<T>, mut state: ZaberState, state_queue: StateQueue) -> (ZaberConn<T>, ZaberState) {
-    state.control_state = ControlState::Init;
-    state_queue.force_push(state.clone());
+fn init_state<T: Backend>(mut state: ExecState, mut zaber_conn: ZaberConn<T>) -> (ExecState, ZaberConn<T>) {
+    state.shared.control_state = ControlState::Init;
+    state.out_channel.force_push(state.shared.clone());
 
     let cmd = format!("home");
     let Ok(_) = zaber_conn.command_reply((0, cmd)) else {
-        return reset_state(zaber_conn, state, state_queue);
+        return reset_state(state, zaber_conn);
     };
 
-    return run_state(zaber_conn, state, state_queue)
+    return run_state(state, zaber_conn);
 
 }
 
-fn run_state<T: Backend>(mut zaber_conn: ZaberConn<T>, mut state: ZaberState, state_queue: StateQueue) -> (ZaberConn<T>, ZaberState) {
-    state.control_state = ControlState::Run;
+fn run_state<T: Backend>(mut state: ExecState, mut zaber_conn: ZaberConn<T>) -> (ExecState, ZaberConn<T>) {
+    state.shared.control_state = ControlState::Run;
 
-    let max = 100.;
-    let min = 5.;
+    let voltage_max = state.config.voltage_max;
+    let voltage_min = state.config.voltage_min;
 
+    let (lock, cvar) = &*state.stop_channel;
+    let mut stop = lock.lock().unwrap();
     loop {
 
         let cmd = format!("io get ai 1");
@@ -74,23 +100,23 @@ fn run_state<T: Backend>(mut zaber_conn: ZaberConn<T>, mut state: ZaberState, st
             Ok(reply) => match reply.flag_ok() {
                 Ok(val) => val.data().parse().unwrap_or(0.),
                 Err(e) => {
-                    state.error = Some(e.to_string());
-                    return reset_state(zaber_conn, state, state_queue);
+                    state.shared.error = Some(e.to_string());
+                    break;
                 }
             }
             Err(e) => {
-                state.error = Some(e.to_string());
-                return reset_state(zaber_conn, state, state_queue);
+                state.shared.error = Some(e.to_string());
+                break;
             }
         };
-        state.voltage_gleeble = voltage_gleeble;
+        state.shared.voltage_gleeble = voltage_gleeble;
 
-        let target_position_parallel = voltage_gleeble - min / (max - min);
+        let target_position_parallel = voltage_gleeble - voltage_min / (voltage_max - voltage_min);
 
 
         let cmd = format!("move abs {}", target_position_parallel);
         let Ok(_) = zaber_conn.command_reply((0, cmd)) else {
-            return reset_state(zaber_conn, state, state_queue);
+            break;
         };
 
         let cmd = format!("get pos");
@@ -103,29 +129,35 @@ fn run_state<T: Backend>(mut zaber_conn: ZaberConn<T>, mut state: ZaberState, st
                     (pos1, pos2)
                 }
                 Err(e) => {
-                    state.error = Some(e.to_string());
-                    return reset_state(zaber_conn, state, state_queue);
+                    state.shared.error = Some(e.to_string());
+                    break;
                 }
             }
             Err(e) => {
-                state.error = Some(e.to_string());
-                return reset_state(zaber_conn, state, state_queue);
+                state.shared.error = Some(e.to_string());
+                break;
             }
         };
-        state.position_cross = pos_cross;
-        state.position_parallel = pos_parallel;
+        state.shared.position_cross = pos_cross;
+        state.shared.position_parallel = pos_parallel;
 
-        state_queue.force_push(state.clone());
+        state.out_channel.force_push(state.shared.clone());
 
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        let result = cvar.wait_timeout(stop, Duration::from_millis(state.config.cycle_time_ms)).unwrap();
+        stop = result.0;
+        if *stop {
+            break;
+        }
     }
+
+    drop(stop);
+    return reset_state(state, zaber_conn);
 }
 
-fn reset_state<T: Backend>(zaber_conn: ZaberConn<T>, mut state: ZaberState, state_queue: StateQueue) -> (ZaberConn<T>, ZaberState) {
-    state.control_state = ControlState::Reset;
-    state_queue.force_push(state.clone());
-    return (zaber_conn, state);
+fn reset_state<T: Backend>(mut state: ExecState, zaber_conn: ZaberConn<T>) -> (ExecState, ZaberConn<T>) {
+    state.shared.control_state = ControlState::Reset;
+    state.out_channel.force_push(state.shared.clone());
+    return (state, zaber_conn);
 }
 
 #[cfg(test)]
@@ -144,22 +176,31 @@ mod tests {
         backend.push(b"@01 0 OK BUSY -- 0\r\n");
         // /get pos
         backend.push(b"@01 0 OK BUSY -- 20 10.1\r\n");
+        backend.push(b"@02 0 OK BUSY -- 10.1\r\n");
 
-        let queue = Arc::new(ArrayQueue::new(1));
 
-        let state = ZaberState {
-            voltage_gleeble: 0.,
-            position_cross: 0.,
-            position_parallel: 0.,
-            busy_cross: false,
-            busy_parallel: false,
-            control_state: ControlState::PreConnect,
-            error: None,
+        let state = ExecState{
+            shared: SharedState {
+                voltage_gleeble: 0.,
+                position_cross: 0.,
+                position_parallel: 0.,
+                busy_cross: false,
+                busy_parallel: false,
+                control_state: ControlState::PreConnect,
+                error: None,
+            },
+            config: Config{
+                cycle_time_ms: 1000,
+                voltage_min: 5.,
+                voltage_max: 100.,
+            },
+            out_channel: Arc::new(ArrayQueue::new(1)),
+            stop_channel: Arc::new((Mutex::new(false), Condvar::new())),
         };
 
-        let _ = queue.force_push(state.clone());
+        let _ = state.out_channel.force_push(state.shared.clone());
 
-        let (mut port, state) = run_state(port, state, queue);
+        let (state, mut port) = run_state(state, port);
         dbg!(&state);
         let mut buf = Vec::new();
         port.backend_mut().read(&mut buf).unwrap();

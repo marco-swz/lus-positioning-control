@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
 
 use crossbeam_queue::ArrayQueue;
 use opcua::server::prelude::*;
@@ -7,12 +7,12 @@ mod methods;
 use methods::{add_axis_methods, add_methods};
 
 mod control;
-use control::{connect_state, ControlState, StateQueue, ZaberState};
+use control::{connect_state, ControlState, ExecState, SharedState, StateChannel, Config};
 
 fn add_axis_variables(
     server: &mut Server,
     ns: u16,
-    zaber: StateQueue,
+    zaber: StateChannel,
 ) -> (NodeId, NodeId) {
     let address_space = server.address_space();
 
@@ -100,7 +100,7 @@ fn add_axis_variables(
     return folders;
 }
 
-fn run_opcua(zaber_state: StateQueue) {
+fn run_opcua(zaber_state: StateChannel) {
     let mut server: Server = ServerBuilder::new()
         .application_name("zaber-opcua")
         .application_uri("urn:zaber-opcua")
@@ -132,22 +132,30 @@ fn run_opcua(zaber_state: StateQueue) {
 }
 
 fn main() {
-    let queue = Arc::new(ArrayQueue::new(1));
-
-    let state = ZaberState {
-        voltage_gleeble: 0.,
-        position_cross: 0.,
-        position_parallel: 0.,
-        busy_cross: false,
-        busy_parallel: false,
-        control_state: ControlState::PreConnect,
-        error: None,
+    let state = ExecState{
+        shared: SharedState {
+            voltage_gleeble: 0.,
+            position_cross: 0.,
+            position_parallel: 0.,
+            busy_cross: false,
+            busy_parallel: false,
+            control_state: ControlState::PreConnect,
+            error: None,
+        },
+        config: Config{
+            cycle_time_ms: 1000,
+            voltage_min: 5.,
+            voltage_max: 100.,
+        },
+        out_channel: Arc::new(ArrayQueue::new(1)),
+        stop_channel: Arc::new((Mutex::new(false), Condvar::new())),
     };
 
-    let _ = queue.force_push(state.clone());
 
-    let queue_clone = Arc::clone(&queue);
+    let _ = state.out_channel.force_push(state.shared.clone());
+
+    let queue_clone = Arc::clone(&state.out_channel);
     std::thread::spawn(|| run_opcua(queue_clone));
 
-    connect_state(queue, state);
+    connect_state(state);
 }
