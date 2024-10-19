@@ -2,18 +2,15 @@ use std::sync::{Arc, Condvar, Mutex};
 
 use crossbeam_queue::ArrayQueue;
 use opcua::server::prelude::*;
+use std::time::Duration;
 
 mod methods;
 use methods::{add_axis_methods, add_methods};
 
 mod control;
-use control::{connect_state, ControlState, ExecState, SharedState, StateChannel, Config};
+use control::{connect, Config, ControlState, ExecState, SharedState, StateChannel, StopChannel};
 
-fn add_axis_variables(
-    server: &mut Server,
-    ns: u16,
-    zaber: StateChannel,
-) -> (NodeId, NodeId) {
+fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (NodeId, NodeId) {
     let address_space = server.address_space();
 
     let node_position_cross = NodeId::new(ns, "position");
@@ -43,16 +40,26 @@ fn add_axis_variables(
             .unwrap();
         let _ = address_space.add_variables(
             vec![
-                Variable::new(&node_position_parallel, "position", "position [mm]", 0 as f64),
+                Variable::new(
+                    &node_position_parallel,
+                    "position",
+                    "position [mm]",
+                    0 as f64,
+                ),
                 Variable::new(&node_busy_parallel, "busy", "busy", false),
             ],
             &folder_parallel_id,
         );
 
         address_space.add_variables(
-            vec![
-                Variable::new(&node_status, "status", "status", UAString::from("Init")),
-            ], &root_id);
+            vec![Variable::new(
+                &node_status,
+                "status",
+                "status",
+                UAString::from("Init"),
+            )],
+            &root_id,
+        );
 
         (folder_cross_id, folder_parallel_id)
     };
@@ -100,7 +107,7 @@ fn add_axis_variables(
     return folders;
 }
 
-fn run_opcua(zaber_state: StateChannel) {
+fn run_opcua(zaber_state: StateChannel, stop: Arc<(Mutex<bool>, Condvar)>) {
     let mut server: Server = ServerBuilder::new()
         .application_name("zaber-opcua")
         .application_uri("urn:zaber-opcua")
@@ -132,30 +139,51 @@ fn run_opcua(zaber_state: StateChannel) {
 }
 
 fn main() {
-    let state = ExecState{
+    let stop_channel = Arc::new((Mutex::new(false), Condvar::new()));
+    let state_channel = Arc::new(ArrayQueue::new(1));
+
+    let queue_clone = Arc::clone(&state_channel);
+    let stop_clone = Arc::clone(&stop_channel);
+    std::thread::spawn(|| run_opcua(queue_clone, stop_clone));
+
+    let mut state = ExecState {
         shared: SharedState {
             voltage_gleeble: 0.,
             position_cross: 0.,
             position_parallel: 0.,
             busy_cross: false,
             busy_parallel: false,
-            control_state: ControlState::PreConnect,
+            control_state: ControlState::Disconnected,
             error: None,
         },
-        config: Config{
+        config: Config {
             cycle_time_ms: 1000,
             voltage_min: 5.,
             voltage_max: 100.,
+            serial_device: "/dev/ttyACM0".to_string(),
         },
-        out_channel: Arc::new(ArrayQueue::new(1)),
-        stop_channel: Arc::new((Mutex::new(false), Condvar::new())),
+        out_channel: state_channel,
+        stop_channel: Arc::clone(&stop_channel),
     };
-
 
     let _ = state.out_channel.force_push(state.shared.clone());
 
-    let queue_clone = Arc::clone(&state.out_channel);
-    std::thread::spawn(|| run_opcua(queue_clone));
+    let (lock, cvar) = &*stop_channel;
+    let mut stop = lock.lock().unwrap();
 
-    connect_state(state);
+    loop {
+        if *stop {
+            let result = cvar.wait_timeout(stop, Duration::from_secs(5)).unwrap();
+            stop = result.0;
+        }
+
+        match connect(&mut state) {
+            Ok(_) => {}
+            Err(e) => {
+                state.shared.control_state = ControlState::Disconnected;
+                state.shared.error = Some(e.to_string());
+                state.out_channel.force_push(state.shared.clone());
+            }
+        }
+    }
 }
