@@ -180,6 +180,7 @@ fn main() {
         match connect(&mut state) {
             Ok(_) => {}
             Err(e) => {
+                println!("{}", e);
                 state.shared.control_state = ControlState::Disconnected;
                 state.shared.error = Some(e.to_string());
                 state.out_channel.force_push(state.shared.clone());

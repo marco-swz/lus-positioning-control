@@ -6,7 +6,10 @@ use std::{
 
 use crossbeam_queue::ArrayQueue;
 use zproto::{
-    ascii::{response::Status, Port},
+    ascii::{
+        response::{check, Status},
+        Port,
+    },
     backend::Backend,
 };
 
@@ -64,8 +67,23 @@ fn init<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Res
     state.shared.control_state = ControlState::Init;
     state.out_channel.force_push(state.shared.clone());
 
-    let cmd = format!("home");
-    let _ = zaber_conn.command_reply((0, cmd))?.flag_ok()?;
+    zaber_conn.command_reply((1, "lockstep 1 setup disable"));
+
+    let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
+
+    zaber_conn.poll_until_idle(1, check::flag_ok())?;
+    println!("cp");
+    //zaber_conn.poll_until_idle(2, check::flag_ok());
+
+    println!("cp1");
+
+    zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
+
+    println!("cp2");
+
+    zaber_conn.command_reply((1, "lockstep 1 setup enable 1 2"));
+
+    println!("cp3");
 
     return run(state, zaber_conn);
 }
@@ -76,27 +94,35 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
     let voltage_max = state.config.voltage_max;
     let voltage_min = state.config.voltage_min;
 
+    println!("cp2");
     let (lock, cvar) = &*state.stop_channel;
-    let mut stop = lock.lock().unwrap();
+    //let mut stop = lock.lock().unwrap();
 
     loop {
         let cmd = format!("io get ai 1");
-        let reply = zaber_conn.command_reply((0, cmd))?.flag_ok()?;
+        let reply = zaber_conn.command_reply((1, cmd))?.flag_ok()?;
         let voltage_gleeble = reply.data().parse()?;
         state.shared.voltage_gleeble = voltage_gleeble;
 
         let target_position_parallel = voltage_gleeble - voltage_min / (voltage_max - voltage_min);
 
-        let cmd = format!("move abs {}", target_position_parallel);
-        let _ = zaber_conn.command_reply((0, cmd))?.flag_ok()?;
+        println!("cp");
+        let cmd = format!("lockstep 1 move abs {}", target_position_parallel as u64);
+        let _ = zaber_conn.command_reply((1, cmd))?.flag_ok()?;
+
+        println!("cp-");
 
         let cmd = format!("get pos");
         for reply in zaber_conn.command_reply_n_iter(cmd, 2)? {
-            let reply = reply?.flag_ok()?;
-            let value: f64 = reply.data().parse()?;
+            let reply = reply?.check(check::unchecked())?;
             match reply.target().device() {
                 1 => {
-                    state.shared.position_parallel = value;
+                    state.shared.position_parallel = reply
+                        .data()
+                        .split_whitespace()
+                        .next()
+                        .ok_or(anyhow!(""))?
+                        .parse()?;
                     state.shared.busy_parallel = if reply.status() == Status::Busy {
                         true
                     } else {
@@ -104,7 +130,7 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
                     };
                 }
                 2 => {
-                    state.shared.position_cross = value;
+                    state.shared.position_cross = reply.data().parse()?;
                     state.shared.busy_cross = if reply.status() == Status::Busy {
                         true
                     } else {
@@ -122,13 +148,15 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
 
         state.out_channel.force_push(state.shared.clone());
 
-        let result = cvar
-            .wait_timeout(stop, Duration::from_millis(state.config.cycle_time_ms))
-            .unwrap();
-        stop = result.0;
-        if *stop {
-            break;
-        }
+        std::thread::sleep(Duration::from_millis(1000));
+
+        //let result = cvar
+        //    .wait_timeout(stop, Duration::from_millis(state.config.cycle_time_ms))
+        //    .unwrap();
+        //stop = result.0;
+        //if *stop {
+        //    break;
+        //}
     }
 
     state.shared.control_state = ControlState::Stopped;
