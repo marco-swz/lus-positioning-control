@@ -94,9 +94,8 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
     let voltage_max = state.config.voltage_max;
     let voltage_min = state.config.voltage_min;
 
-    println!("cp2");
     let (lock, cvar) = &*state.stop_channel;
-    //let mut stop = lock.lock().unwrap();
+    let mut stop = lock.lock().unwrap();
 
     loop {
         let cmd = format!("io get ai 1");
@@ -106,11 +105,8 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
 
         let target_position_parallel = voltage_gleeble - voltage_min / (voltage_max - voltage_min);
 
-        println!("cp");
         let cmd = format!("lockstep 1 move abs {}", target_position_parallel as u64);
         let _ = zaber_conn.command_reply((1, cmd))?.flag_ok()?;
-
-        println!("cp-");
 
         let cmd = format!("get pos");
         for reply in zaber_conn.command_reply_n_iter(cmd, 2)? {
@@ -148,19 +144,19 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
 
         state.out_channel.force_push(state.shared.clone());
 
-        std::thread::sleep(Duration::from_millis(1000));
+        //std::thread::sleep(Duration::from_millis(1000));
 
-        //let result = cvar
-        //    .wait_timeout(stop, Duration::from_millis(state.config.cycle_time_ms))
-        //    .unwrap();
-        //stop = result.0;
-        //if *stop {
-        //    break;
-        //}
+        let result = cvar
+            .wait_timeout(stop, Duration::from_millis(state.config.cycle_time_ms))
+            .unwrap();
+        stop = result.0;
+        if *stop {
+            break;
+        }
     }
 
     state.shared.control_state = ControlState::Stopped;
-    state.out_channel.push(state.shared.clone());
+    state.out_channel.push(state.shared.clone()).unwrap();
     return Ok(());
 }
 
@@ -197,13 +193,21 @@ mod tests {
     fn test_run_stop() {
         let mut port = Port::open_mock();
         let backend = port.backend_mut();
-        // /io get ai 1
-        backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
-        // /move abs
-        backend.push(b"@01 0 OK BUSY -- 0\r\n");
-        // /get pos
-        backend.push(b"@01 0 OK BUSY -- 20\r\n");
-        backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
+        backend.set_reply_callback(|buffer, x| buffer.extend_fron_slice(match std::str::from_utf8(x) {
+            Ok("/1 io get ai 1\n") => b"@01 0 OK BUSY -- 5.5\r\n",
+            Ok("/1 lockstep 1 move abs 5\n") => b"@01 0 OK BUSY -- 0\r\n",
+            Ok("/get pos\n") => b"@01 0 OK BUSY -- 20\r\n@02 0 OK BUSY -- 10.1\r\n",
+            Ok(i) => panic!("Invalid input {}", i),
+            Err(e) => panic!("{}", e.to_string()),
+        }));
+
+        //// /io get ai 1
+        //backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
+        //// /move abs
+        //backend.push(b"@01 0 OK BUSY -- 0\r\n");
+        //// /get pos
+        //backend.push(b"@01 0 OK BUSY -- 20\r\n");
+        //backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
 
         let mut state = prepare_state();
         let _ = state.out_channel.force_push(state.shared.clone());
@@ -234,6 +238,46 @@ mod tests {
     #[test]
     /// Two loops with timeout (= disconnect)
     fn test_run_disconnect() {
+        let mut port = Port::open_mock();
+        let backend = port.backend_mut();
+        // /io get ai 1
+        backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
+        // /move abs
+        backend.push(b"@01 0 OK BUSY -- 0\r\n");
+        // /get pos
+        backend.push(b"@01 0 OK BUSY -- 20\r\n");
+        backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
+
+        // /io get ai 1
+        backend.push(b"@01 0 OK BUSY -- 6.5\r\n");
+        // /move abs
+        backend.push(b"@01 0 OK BUSY -- 0\r\n");
+        // /get pos
+        backend.push(b"@01 0 OK IDLE -- 20.1\r\n");
+        // Last message missing -> timeout
+
+        let mut state = prepare_state();
+        let _ = state.out_channel.force_push(state.shared.clone());
+
+        assert!(run(&mut state, &mut port).is_err());
+
+        assert_eq!(
+            state.shared,
+            SharedState {
+                voltage_gleeble: 6.5,
+                position_parallel: 20.1,
+                position_cross: 10.1,
+                busy_parallel: false,
+                busy_cross: false,
+                control_state: ControlState::Running,
+                error: None,
+            }
+        );
+    }
+
+    #[test]
+    /// Error in reply
+    fn test_run_reply() {
         let mut port = Port::open_mock();
         let backend = port.backend_mut();
         // /io get ai 1
