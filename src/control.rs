@@ -156,7 +156,7 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
     }
 
     state.shared.control_state = ControlState::Stopped;
-    state.out_channel.push(state.shared.clone()).unwrap();
+    state.out_channel.force_push(state.shared.clone()).unwrap();
     return Ok(());
 }
 
@@ -193,13 +193,14 @@ mod tests {
     fn test_run_stop() {
         let mut port = Port::open_mock();
         let backend = port.backend_mut();
-        backend.set_reply_callback(|buffer, x| buffer.extend_fron_slice(match std::str::from_utf8(x) {
-            Ok("/1 io get ai 1\n") => b"@01 0 OK BUSY -- 5.5\r\n",
-            Ok("/1 lockstep 1 move abs 5\n") => b"@01 0 OK BUSY -- 0\r\n",
-            Ok("/get pos\n") => b"@01 0 OK BUSY -- 20\r\n@02 0 OK BUSY -- 10.1\r\n",
-            Ok(i) => panic!("Invalid input {}", i),
-            Err(e) => panic!("{}", e.to_string()),
-        }));
+        backend.set_reply_callback(|buffer, msg|
+            buffer.extend_from_slice(match msg {
+                b"/1 io get ai 1\n" => b"@01 0 OK BUSY -- 5.5\r\n",
+                b"/1 lockstep 1 move abs 5\n" => b"@01 0 OK BUSY -- 0\r\n",
+                b"/get pos\n" => b"@01 0 OK BUSY -- 20\r\n@02 0 OK IDLE -- 10.1\r\n",
+                e => panic!("unexpected message: {:?}", e),
+            })
+        );
 
         //// /io get ai 1
         //backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
