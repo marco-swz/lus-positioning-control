@@ -5,10 +5,11 @@ use opcua::server::prelude::*;
 use std::time::Duration;
 
 mod methods;
-use methods::{add_axis_methods, add_methods};
 
 mod control;
-use control::{connect, Config, ControlState, ExecState, SharedState, StateChannel, StopChannel};
+use control::{init, Config, ControlState, ExecState, SharedState, StateChannel, StopChannel};
+
+mod zaber;
 
 fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (NodeId, NodeId) {
     let address_space = server.address_space();
@@ -107,7 +108,7 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (Nod
     return folders;
 }
 
-fn run_opcua(zaber_state: StateChannel, stop: Arc<(Mutex<bool>, Condvar)>) {
+fn run_opcua(zaber_state: StateChannel, stop: StopChannel) {
     let mut server: Server = ServerBuilder::new()
         .application_name("zaber-opcua")
         .application_uri("urn:zaber-opcua")
@@ -168,16 +169,17 @@ fn main() {
 
     let _ = state.out_channel.force_push(state.shared.clone());
 
-    let (lock, cvar) = &*stop_channel;
-    let mut stop = lock.lock().unwrap();
-
     loop {
+        let (lock, cvar) = &*stop_channel;
+        let mut stop = lock.lock().unwrap();
         if *stop {
             let result = cvar.wait_timeout(stop, Duration::from_secs(5)).unwrap();
             stop = result.0;
         }
 
-        match connect(&mut state) {
+        drop(stop);
+
+        match init(&mut state) {
             Ok(_) => {}
             Err(e) => {
                 println!("{}", e);

@@ -29,7 +29,7 @@ impl callbacks::Method for ZaberCallback {
 
         let (status_code, status_text) = (self.action)(zaber, request, self.device_id);
 
-        drop(zaber);
+        let _ = zaber;
 
         return Ok(CallMethodResult {
             status_code,

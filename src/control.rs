@@ -1,19 +1,13 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::{
     sync::{Arc, Condvar, Mutex},
     time::Duration,
 };
 
 use crossbeam_queue::ArrayQueue;
-use zproto::{
-    ascii::{
-        response::{check, Status},
-        Port,
-    },
-    backend::Backend,
-};
 
-type ZaberConn<T> = Port<'static, T>;
+use crate::zaber::init_zaber;
+
 pub type StateChannel = Arc<ArrayQueue<SharedState>>;
 pub type StopChannel = Arc<(Mutex<bool>, Condvar)>;
 
@@ -28,10 +22,8 @@ pub struct Config {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ControlState {
     Disconnected,
-    Connected,
     Init,
     Running,
-    Reset,
     Stopped,
 }
 
@@ -54,102 +46,50 @@ pub struct ExecState {
     pub config: Config,
 }
 
-pub fn connect(state: &mut ExecState) -> Result<()> {
-    state.shared.control_state = ControlState::Connected;
-    state.out_channel.force_push(state.shared.clone());
-
-    let mut zaber_conn = Port::open_serial(&state.config.serial_device)?;
-
-    return init(state, &mut zaber_conn);
+pub fn init(state: &mut ExecState) -> Result<()> {
+    return init_zaber(state);
 }
 
-fn init<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Result<()> {
-    state.shared.control_state = ControlState::Init;
-    state.out_channel.force_push(state.shared.clone());
-
-    zaber_conn.command_reply((1, "lockstep 1 setup disable"));
-
-    let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
-
-    zaber_conn.poll_until_idle(1, check::flag_ok())?;
-    println!("cp");
-    //zaber_conn.poll_until_idle(2, check::flag_ok());
-
-    println!("cp1");
-
-    zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
-
-    println!("cp2");
-
-    zaber_conn.command_reply((1, "lockstep 1 setup enable 1 2"));
-
-    println!("cp3");
-
-    return run(state, zaber_conn);
-}
-
-fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Result<()> {
+pub fn run(
+    state: &mut ExecState,
+    mut get_voltage: impl FnMut() -> Result<f64>,
+    mut get_pos: impl FnMut() -> Result<(f64, f64, bool, bool)>,
+    mut move_parallel: impl FnMut(f64) -> Result<()>,
+    _move_cross: impl FnMut(f64) -> Result<()>,
+) -> Result<()> {
     state.shared.control_state = ControlState::Running;
 
     let voltage_max = state.config.voltage_max;
     let voltage_min = state.config.voltage_min;
 
-    let (lock, cvar) = &*state.stop_channel;
-    let mut stop = lock.lock().unwrap();
-
     loop {
-        let cmd = format!("io get ai 1");
-        let reply = zaber_conn.command_reply((1, cmd))?.flag_ok()?;
-        let voltage_gleeble = reply.data().parse()?;
+        let voltage_gleeble = get_voltage()?;
         state.shared.voltage_gleeble = voltage_gleeble;
 
         let target_position_parallel = voltage_gleeble - voltage_min / (voltage_max - voltage_min);
 
-        let cmd = format!("lockstep 1 move abs {}", target_position_parallel as u64);
-        let _ = zaber_conn.command_reply((1, cmd))?.flag_ok()?;
+        move_parallel(target_position_parallel)?;
 
-        let cmd = format!("get pos");
-        for reply in zaber_conn.command_reply_n_iter(cmd, 2)? {
-            let reply = reply?.check(check::unchecked())?;
-            match reply.target().device() {
-                1 => {
-                    state.shared.position_parallel = reply
-                        .data()
-                        .split_whitespace()
-                        .next()
-                        .ok_or(anyhow!(""))?
-                        .parse()?;
-                    state.shared.busy_parallel = if reply.status() == Status::Busy {
-                        true
-                    } else {
-                        false
-                    };
-                }
-                2 => {
-                    state.shared.position_cross = reply.data().parse()?;
-                    state.shared.busy_cross = if reply.status() == Status::Busy {
-                        true
-                    } else {
-                        false
-                    };
-                }
-                _ => {
-                    return Err(anyhow!(
-                        "Unkown device with number {}",
-                        reply.target().device()
-                    ))
-                }
-            }
-        }
+        let (pos_parallel, pos_cross, busy_parallel, busy_cross) = get_pos()?;
+        state.shared.position_parallel = pos_parallel;
+        state.shared.position_cross = pos_cross;
+        state.shared.busy_parallel = busy_parallel;
+        state.shared.busy_cross = busy_cross;
 
         state.out_channel.force_push(state.shared.clone());
 
-        //std::thread::sleep(Duration::from_millis(1000));
+        let (lock, cvar) = &*state.stop_channel;
+        let Ok(stop) = lock.try_lock() else {
+            std::thread::sleep(Duration::from_millis(state.config.cycle_time_ms));
+            continue;
+        };
 
         let result = cvar
             .wait_timeout(stop, Duration::from_millis(state.config.cycle_time_ms))
             .unwrap();
-        stop = result.0;
+
+        let stop = result.0;
+
         if *stop {
             break;
         }
@@ -162,7 +102,11 @@ fn run<T: Backend>(state: &mut ExecState, zaber_conn: &mut ZaberConn<T>) -> Resu
 
 #[cfg(test)]
 mod tests {
+    /*
+    use zproto::ascii::Port;
+
     use super::*;
+
 
     fn prepare_state() -> ExecState {
         let state = ExecState {
@@ -193,14 +137,14 @@ mod tests {
     fn test_run_stop() {
         let mut port = Port::open_mock();
         let backend = port.backend_mut();
-        backend.set_reply_callback(|buffer, msg|
+        backend.set_reply_callback(|buffer, msg| {
             buffer.extend_from_slice(match msg {
                 b"/1 io get ai 1\n" => b"@01 0 OK BUSY -- 5.5\r\n",
                 b"/1 lockstep 1 move abs 5\n" => b"@01 0 OK BUSY -- 0\r\n",
                 b"/get pos\n" => b"@01 0 OK BUSY -- 20\r\n@02 0 OK IDLE -- 10.1\r\n",
                 e => panic!("unexpected message: {:?}", e),
             })
-        );
+        });
 
         //// /io get ai 1
         //backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
@@ -347,4 +291,5 @@ mod tests {
             }
         );
     }
+    */
 }

@@ -1216,6 +1216,7 @@ dependencies = [
 [[package]]
 name = "zproto"
 version = "0.4.0-pre"
+source = "git+https://github.com/stphnt/zproto.git?branch=mock-port#c999b1b561c0a3ee69af937c2f891ee995b7cb39"
 dependencies = [
  "log",
  "paste",
