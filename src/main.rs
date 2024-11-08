@@ -60,6 +60,8 @@ fn main() {
 
         drop(stop);
 
+        continue;
+
         match init(&mut state) {
             Ok(_) => {}
             Err(e) => {

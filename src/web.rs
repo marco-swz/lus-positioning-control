@@ -13,17 +13,40 @@ async fn page(State(state): State<AppState>) -> Html<String> {
 
     Html(format!(
         "
-        <span>State</span>
-        <div>
-            <span>Position Parallel</span>
-            <span>{}</span>
-            <span>Busy Parallel</span>
-            <span>{}</span>
-            <span>Position Cross</span>
-            <span>{}</span>
-            <span>Busy Cross</span>
-            <span>{}</span>
-        </div>
+<head>
+    <style>
+        .grid {{
+            display: grid;
+            grid-template-columns: max-content 1fr;
+            gap: 5px 20px
+        }}
+    </style>
+</head>
+<body>
+    <h1>State</h1>
+    <div class=\"grid\">
+        <span>Position Parallel</span>
+        <span>{}</span>
+        <span>Busy Parallel</span>
+        <span>{}</span>
+        <span>Position Cross</span>
+        <span>{}</span>
+        <span>Busy Cross</span>
+        <span>{}</span>
+    </div>
+    <h1>Configuration</h1>
+    <form class=\"grid\">
+        <label>Refresh Rate</label>
+        <input name=\"refresh-rate\" value=\"\"/>
+        <label>Min. Voltage</label>
+        <input name=\"volt-min\" value=\"\"/>
+        <label>Max. Voltage</label>
+        <input name=\"volt-max\" value=\"\"/>
+    </form>
+    <script>
+        console.log('hello');
+    </script>
+</body>
     ",
         state.position_parallel, state.busy_parallel, state.position_cross, state.busy_cross
     ))
