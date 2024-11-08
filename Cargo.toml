@@ -5,8 +5,11 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.90"
+axum = "0.7.7"
 crossbeam-queue = "0.3.11"
+futures = "0.3.31"
 opcua = "0.12.0"
+tokio = "1.41.1"
 #zproto = "0.3.5"
 zproto = { git = "https://github.com/stphnt/zproto.git", branch = "mock-port", features = ["mock"]}
 #zproto = { path = "../zproto", features = ["mock"] }

@@ -1,14 +1,12 @@
 use anyhow::Result;
 use std::{
-    sync::{Arc, Condvar, Mutex},
+    sync::{Arc, Condvar, Mutex, RwLock},
     time::Duration,
 };
 
-use crossbeam_queue::ArrayQueue;
-
 use crate::zaber::init_zaber;
 
-pub type StateChannel = Arc<ArrayQueue<SharedState>>;
+pub type StateChannel = Arc<RwLock<SharedState>>;
 pub type StopChannel = Arc<(Mutex<bool>, Condvar)>;
 
 #[derive(Clone, Debug)]
@@ -76,7 +74,10 @@ pub fn run(
         state.shared.busy_parallel = busy_parallel;
         state.shared.busy_cross = busy_cross;
 
-        state.out_channel.force_push(state.shared.clone());
+        if let Ok(mut out) = state.out_channel.try_write() {
+            *out = state.shared.clone();
+            drop(out);
+        }
 
         let (lock, cvar) = &*state.stop_channel;
         let Ok(stop) = lock.try_lock() else {
@@ -96,7 +97,9 @@ pub fn run(
     }
 
     state.shared.control_state = ControlState::Stopped;
-    state.out_channel.force_push(state.shared.clone()).unwrap();
+    let mut out = state.out_channel.write().unwrap();
+    *out = state.shared.clone();
+    drop(out);
     return Ok(());
 }
 

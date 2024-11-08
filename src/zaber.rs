@@ -16,7 +16,9 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
     let mut zaber_conn = Port::open_serial(&state.config.serial_device)?;
 
     state.shared.control_state = ControlState::Init;
-    state.out_channel.force_push(state.shared.clone());
+    let mut out = state.out_channel.write().unwrap();
+    *out = state.shared.clone();
+    drop(out);
 
     zaber_conn.command_reply((1, "lockstep 1 setup disable"))?.check(check::unchecked())?;
 
