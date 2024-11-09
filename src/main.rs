@@ -1,5 +1,6 @@
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use crossbeam_channel::bounded;
 
 mod methods;
 
@@ -15,7 +16,9 @@ mod web;
 use web::run_web_server;
 
 fn main() {
-    let stop_channel = Arc::new((Mutex::new(false), Condvar::new()));
+    let (tx_stop, rx_stop) = bounded::<()>(1);
+    let (tx_start, rx_start) = bounded::<()>(1);
+
     let shared_state = SharedState {
         voltage_gleeble: 0.,
         position_cross: 0.,
@@ -28,42 +31,41 @@ fn main() {
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
     let queue_clone = Arc::clone(&state_channel);
-    let stop_clone = Arc::clone(&stop_channel);
-    std::thread::spawn(|| run_opcua(queue_clone, stop_clone));
+    std::thread::spawn(|| run_opcua(queue_clone));
+
     let queue_clone = Arc::clone(&state_channel);
-    let stop_clone = Arc::clone(&stop_channel);
-    std::thread::spawn(|| run_web_server(queue_clone, stop_clone));
+    let tx_stop_clone = tx_stop.clone();
+    let tx_start_clone = tx_start.clone();
+    std::thread::spawn(|| run_web_server(queue_clone, tx_start_clone, tx_stop_clone));
 
     let mut state = ExecState {
         shared: shared_state.clone(),
         config: Config {
-            cycle_time_ms: 1000,
+            cycle_time: Duration::from_millis(1000),
+            restart_timeout: Duration::from_secs(10),
             voltage_min: 5.,
             voltage_max: 100.,
             serial_device: "/dev/ttyACM0".to_string(),
         },
         out_channel: state_channel,
-        stop_channel: Arc::clone(&stop_channel),
+        rx_stop: rx_stop.clone(),
     };
 
     let mut out = state.out_channel.write().unwrap();
     *out = shared_state.clone();
     drop(out);
 
+    let mut stopped = true;
     loop {
-        let (lock, cvar) = &*stop_channel;
-        let mut stop = lock.lock().unwrap();
-        if *stop {
-            let result = cvar.wait_timeout(stop, Duration::from_secs(5)).unwrap();
-            stop = result.0;
+        if stopped {
+            if let Ok(_) = rx_start.recv() {
+                // TODO(marco)
+                continue;
+            }
         }
 
-        drop(stop);
-
-        continue;
-
         match init(&mut state) {
-            Ok(_) => {}
+            Ok(_) => stopped = true,
             Err(e) => {
                 println!("{}", e);
                 state.shared.control_state = ControlState::Disconnected;
@@ -71,6 +73,8 @@ fn main() {
                 let mut out = state.out_channel.write().unwrap();
                 *out = state.shared.clone();
                 drop(out);
+                std::thread::sleep(state.config.restart_timeout);
+                stopped = false;
             }
         }
     }

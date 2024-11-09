@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use opcua::server::prelude::*;
 
-use crate::control::{StateChannel, StopChannel};
+use crate::control::StateChannel;
 
 fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (NodeId, NodeId) {
     let address_space = server.address_space();
@@ -101,7 +101,7 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (Nod
     return folders;
 }
 
-pub fn run_opcua(zaber_state: StateChannel, stop: StopChannel) {
+pub fn run_opcua(zaber_state: StateChannel) {
     let mut server: Server = ServerBuilder::new()
         .application_name("zaber-opcua")
         .application_uri("urn:zaber-opcua")

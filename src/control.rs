@@ -1,17 +1,19 @@
 use anyhow::Result;
+use crossbeam_channel::Receiver;
 use std::{
-    sync::{Arc, Condvar, Mutex, RwLock},
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
 use crate::zaber::init_zaber;
 
 pub type StateChannel = Arc<RwLock<SharedState>>;
-pub type StopChannel = Arc<(Mutex<bool>, Condvar)>;
+pub type StopChannel = Receiver<()>;
 
 #[derive(Clone, Debug)]
 pub struct Config {
-    pub cycle_time_ms: u64,
+    pub cycle_time: Duration,
+    pub restart_timeout: Duration,
     pub voltage_min: f64,
     pub voltage_max: f64,
     pub serial_device: String,
@@ -40,7 +42,7 @@ pub struct SharedState {
 pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
-    pub stop_channel: StopChannel,
+    pub rx_stop: StopChannel,
     pub config: Config,
 }
 
@@ -79,19 +81,7 @@ pub fn run(
             drop(out);
         }
 
-        let (lock, cvar) = &*state.stop_channel;
-        let Ok(stop) = lock.try_lock() else {
-            std::thread::sleep(Duration::from_millis(state.config.cycle_time_ms));
-            continue;
-        };
-
-        let result = cvar
-            .wait_timeout(stop, Duration::from_millis(state.config.cycle_time_ms))
-            .unwrap();
-
-        let stop = result.0;
-
-        if *stop {
+        if let Ok(_) = state.rx_stop.recv_timeout(state.config.cycle_time) {
             break;
         }
     }
