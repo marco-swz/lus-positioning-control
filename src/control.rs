@@ -1,8 +1,7 @@
 use anyhow::Result;
 use crossbeam_channel::Receiver;
 use std::{
-    sync::{Arc, RwLock},
-    time::Duration,
+    fmt::Display, sync::{Arc, RwLock}, time::Duration
 };
 
 use crate::zaber::init_zaber;
@@ -25,6 +24,18 @@ pub enum ControlState {
     Init,
     Running,
     Stopped,
+}
+
+impl Display for ControlState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Disconnected => "Disconnected",
+            Self::Init => "Init",
+            Self::Running => "Running",
+            Self::Stopped => "Stopped",
+        };
+        write!(f, "{}", text)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
