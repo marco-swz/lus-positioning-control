@@ -1,6 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Result, anyhow};
+use chrono::Local;
 use zproto::{
     ascii::{
         response::{check, Status},
@@ -16,6 +17,8 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
     let mut zaber_conn = Port::open_serial(&state.config.serial_device)?;
 
     state.shared.control_state = ControlState::Init;
+    state.shared.timestamp = Local::now();
+
     let mut out = state.out_channel.write().unwrap();
     *out = state.shared.clone();
     drop(out);

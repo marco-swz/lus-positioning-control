@@ -1,5 +1,7 @@
 use anyhow::Result;
+use chrono::{DateTime, Local};
 use crossbeam_channel::Receiver;
+use serde::Serialize;
 use std::{
     fmt::Display, sync::{Arc, RwLock}, time::Duration
 };
@@ -18,7 +20,7 @@ pub struct Config {
     pub serial_device: String,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum ControlState {
     Disconnected,
     Init,
@@ -38,7 +40,7 @@ impl Display for ControlState {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SharedState {
     pub voltage_gleeble: f64,
     pub position_cross: f64,
@@ -47,6 +49,7 @@ pub struct SharedState {
     pub busy_parallel: bool,
     pub control_state: ControlState,
     pub error: Option<String>,
+    pub timestamp: DateTime<Local>,
 }
 
 #[derive(Debug)]
@@ -86,6 +89,7 @@ pub fn run(
         state.shared.position_cross = pos_cross;
         state.shared.busy_parallel = busy_parallel;
         state.shared.busy_cross = busy_cross;
+        state.shared.timestamp = Local::now();
 
         if let Ok(mut out) = state.out_channel.try_write() {
             *out = state.shared.clone();
@@ -98,6 +102,7 @@ pub fn run(
     }
 
     state.shared.control_state = ControlState::Stopped;
+    state.shared.timestamp = Local::now();
     let mut out = state.out_channel.write().unwrap();
     *out = state.shared.clone();
     drop(out);

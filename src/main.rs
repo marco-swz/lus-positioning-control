@@ -1,8 +1,7 @@
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use chrono::Local;
 use crossbeam_channel::bounded;
-
-mod methods;
 
 mod control;
 use control::{init, Config, ControlState, ExecState, SharedState};
@@ -27,16 +26,9 @@ fn main() {
         busy_parallel: false,
         control_state: ControlState::Disconnected,
         error: None,
+        timestamp: Local::now(),
     };
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
-
-    let queue_clone = Arc::clone(&state_channel);
-    std::thread::spawn(|| run_opcua(queue_clone));
-
-    let queue_clone = Arc::clone(&state_channel);
-    let tx_stop_clone = tx_stop.clone();
-    let tx_start_clone = tx_start.clone();
-    std::thread::spawn(|| run_web_server(queue_clone, tx_start_clone, tx_stop_clone));
 
     let mut state = ExecState {
         shared: shared_state.clone(),
@@ -47,9 +39,19 @@ fn main() {
             voltage_max: 100.,
             serial_device: "/dev/ttyACM0".to_string(),
         },
-        out_channel: state_channel,
+        out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
     };
+
+    let queue_clone = Arc::clone(&state_channel);
+    std::thread::spawn(|| run_opcua(queue_clone));
+
+    let queue_clone = state_channel;
+    let tx_stop_clone = tx_stop.clone();
+    let tx_start_clone = tx_start.clone();
+    let config_clone = state.config.clone();
+    std::thread::spawn(|| run_web_server(queue_clone, tx_start_clone, tx_stop_clone, config_clone));
+
 
     let mut out = state.out_channel.write().unwrap();
     *out = shared_state.clone();
@@ -70,6 +72,7 @@ fn main() {
                 println!("{}", e);
                 state.shared.control_state = ControlState::Disconnected;
                 state.shared.error = Some(e.to_string());
+                state.shared.timestamp = Local::now();
                 let mut out = state.out_channel.write().unwrap();
                 *out = state.shared.clone();
                 drop(out);
