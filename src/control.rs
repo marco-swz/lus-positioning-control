@@ -1,7 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use crossbeam_channel::Receiver;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 use std::{
     fmt::Display, sync::{Arc, RwLock}, time::Duration
 };
@@ -11,9 +12,12 @@ use crate::zaber::init_zaber;
 pub type StateChannel = Arc<RwLock<SharedState>>;
 pub type StopChannel = Receiver<()>;
 
-#[derive(Clone, Debug)]
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
+    #[serde_as(as = "serde_with::DurationMilliSeconds<u64>")]
     pub cycle_time: Duration,
+    #[serde_as(as = "serde_with::DurationMilliSeconds<u64>")]
     pub restart_timeout: Duration,
     pub voltage_min: f64,
     pub voltage_max: f64,
@@ -57,7 +61,7 @@ pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
     pub rx_stop: StopChannel,
-    pub config: Config,
+    pub config: Arc<RwLock<Config>>,
 }
 
 pub fn init(state: &mut ExecState) -> Result<()> {
@@ -73,8 +77,11 @@ pub fn run(
 ) -> Result<()> {
     state.shared.control_state = ControlState::Running;
 
-    let voltage_max = state.config.voltage_max;
-    let voltage_min = state.config.voltage_min;
+    let config = state.config.read().unwrap();
+    let voltage_max = config.voltage_max;
+    let voltage_min = config.voltage_min;
+    let cycle_time = config.cycle_time;
+    drop(config);
 
     loop {
         let voltage_gleeble = get_voltage()?;
@@ -96,7 +103,7 @@ pub fn run(
             drop(out);
         }
 
-        if let Ok(_) = state.rx_stop.recv_timeout(state.config.cycle_time) {
+        if let Ok(_) = state.rx_stop.recv_timeout(cycle_time) {
             break;
         }
     }

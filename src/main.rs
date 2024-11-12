@@ -32,16 +32,17 @@ fn main() {
 
     let mut state = ExecState {
         shared: shared_state.clone(),
-        config: Config {
+        config: Arc::new(RwLock::new(Config {
             cycle_time: Duration::from_millis(1000),
             restart_timeout: Duration::from_secs(10),
             voltage_min: 5.,
             voltage_max: 100.,
             serial_device: "/dev/ttyACM0".to_string(),
-        },
+        })),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
     };
+
 
     let queue_clone = Arc::clone(&state_channel);
     std::thread::spawn(|| run_opcua(queue_clone));
@@ -59,24 +60,34 @@ fn main() {
 
     let mut stopped = true;
     loop {
-        if stopped {
-            if let Ok(_) = rx_start.recv() {
-                // TODO(marco)
-                continue;
-            }
+        if let Ok(_) = rx_stop.try_recv() {
+            // TODO(marco): Fix stop
+            stopped = true;
         }
 
+        if stopped {
+            dbg!("stopped - wait for start");
+            let _ = rx_start.recv();
+        }
+
+        dbg!("try init");
         match init(&mut state) {
             Ok(_) => stopped = true,
             Err(e) => {
-                println!("{}", e);
+                dbg!(&e);
                 state.shared.control_state = ControlState::Disconnected;
                 state.shared.error = Some(e.to_string());
                 state.shared.timestamp = Local::now();
-                let mut out = state.out_channel.write().unwrap();
-                *out = state.shared.clone();
-                drop(out);
-                std::thread::sleep(state.config.restart_timeout);
+
+                {
+                    let mut out = state.out_channel.write().unwrap();
+                    *out = state.shared.clone();
+                }
+
+                let restart_timeout = {
+                    state.config.read().unwrap().restart_timeout
+                };
+                std::thread::sleep(restart_timeout);
                 stopped = false;
             }
         }

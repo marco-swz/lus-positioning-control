@@ -14,7 +14,11 @@ use crate::control::{run, ControlState, ExecState};
 type ZaberConn<T> = Port<'static, T>;
 
 pub fn init_zaber(state: &mut ExecState) -> Result<()> {
-    let mut zaber_conn = Port::open_serial(&state.config.serial_device)?;
+    let serial_device = {
+        state.config.read().unwrap().serial_device.clone()
+    };
+
+    let mut zaber_conn = Port::open_serial(&serial_device)?;
 
     state.shared.control_state = ControlState::Init;
     state.shared.timestamp = Local::now();

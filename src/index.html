@@ -1,0 +1,46 @@
+<div id="main">
+    <div id="tabs">
+        <div id="tab-control" class="tab active" onclick="handleClickTab('control')">Control</div>
+        <div id="tab-config" class="tab" onclick="handleClickTab('config')">Configuration</div>
+    </div>
+    <div id="control" class="content visible">
+        <div class="grid">
+            <span>Status</span>
+            <span id="control_state"></span>
+            <span>Voltage</span>
+            <span id="voltage_gleeble"></span>
+            <span>Position Parallel</span>
+            <span id="position_parallel"></span>
+            <span>Busy Parallel</span>
+            <span id="busy_parallel"></span>
+            <span>Position Cross</span>
+            <span id="position_cross"></span>
+            <span>Busy Cross</span>
+            <span id="busy_cross"></span>
+            <span>Error</span>
+            <span id="error"></span>
+            <span>Last Change</span>
+            <span id="timestamp"></span>
+        </div>
+        <button id="btn-refresh" onclick="handleClickRefresh()">Refresh</button>
+        <button id="btn-start" onclick="handleClickStart()">Start</button>
+        <button id="btn-stop" onclick="handleClickStop()">Stop</button>
+    </div>
+    <div id="config" class="content">
+        <form id="form-config" action="/config" method="post">
+            <div class="grid">
+                <label>Serial Port</label>
+                <input name="serial_device" value="" required/>
+                <label>Refresh Rate</label>
+                <input name="cycle_time" value="" required/>
+                <label>Min. Voltage</label>
+                <input name="voltage_min" value="" required/>
+                <label>Max. Voltage</label>
+                <input name="voltage_max" value="" required/>
+                <label>Restart Timeout</label>
+                <input name="restart_timeout" value="" required/>
+            </div>
+            <button type="button" onclick="handleClickSaveConfig()">Save</button>
+        </form>
+    </div>
+</div>
