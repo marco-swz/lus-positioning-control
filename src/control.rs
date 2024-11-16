@@ -4,13 +4,19 @@ use crossbeam_channel::Receiver;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::{
-    fmt::Display, sync::{Arc, RwLock}, time::Duration
+    fmt::Display, path::PathBuf, sync::{Arc, RwLock}, time::Duration
 };
 
-use crate::zaber::init_zaber;
+use crate::{ramp::init_ramp, zaber::init_zaber};
 
 pub type StateChannel = Arc<RwLock<SharedState>>;
 pub type StopChannel = Receiver<()>;
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Backend {
+    Zaber,
+    Ramp,
+}
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -22,23 +28,23 @@ pub struct Config {
     pub voltage_min: f64,
     pub voltage_max: f64,
     pub serial_device: String,
+    pub opcua_config_path: PathBuf,
+    pub backend: Backend,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub enum ControlState {
-    Disconnected,
-    Init,
-    Running,
+pub enum ControlStatus {
     Stopped,
+    Running,
+    Error,
 }
 
-impl Display for ControlState {
+impl Display for ControlStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = match self {
-            Self::Disconnected => "Disconnected",
-            Self::Init => "Init",
             Self::Running => "Running",
             Self::Stopped => "Stopped",
+            Self::Error => "Error",
         };
         write!(f, "{}", text)
     }
@@ -51,7 +57,7 @@ pub struct SharedState {
     pub position_parallel: f64,
     pub busy_cross: bool,
     pub busy_parallel: bool,
-    pub control_state: ControlState,
+    pub control_state: ControlStatus,
     pub error: Option<String>,
     pub timestamp: DateTime<Local>,
 }
@@ -65,7 +71,14 @@ pub struct ExecState {
 }
 
 pub fn init(state: &mut ExecState) -> Result<()> {
-    return init_zaber(state);
+    let backend = {
+        state.config.read().unwrap().backend.clone()
+    };
+
+    return match backend {
+        Backend::Zaber => init_zaber(state),
+        Backend::Ramp => init_ramp(state),
+    };
 }
 
 pub fn run(
@@ -75,7 +88,7 @@ pub fn run(
     mut move_parallel: impl FnMut(f64) -> Result<()>,
     _move_cross: impl FnMut(f64) -> Result<()>,
 ) -> Result<()> {
-    state.shared.control_state = ControlState::Running;
+    state.shared.control_state = ControlStatus::Running;
 
     let config = state.config.read().unwrap();
     let voltage_max = config.voltage_max;
@@ -85,6 +98,7 @@ pub fn run(
 
     loop {
         let voltage_gleeble = get_voltage()?;
+        dbg!(&voltage_gleeble);
         state.shared.voltage_gleeble = voltage_gleeble;
 
         let target_position_parallel = voltage_gleeble - voltage_min / (voltage_max - voltage_min);
@@ -108,7 +122,7 @@ pub fn run(
         }
     }
 
-    state.shared.control_state = ControlState::Stopped;
+    state.shared.control_state = ControlStatus::Stopped;
     state.shared.timestamp = Local::now();
     let mut out = state.out_channel.write().unwrap();
     *out = state.shared.clone();

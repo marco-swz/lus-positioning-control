@@ -4,15 +4,17 @@ use chrono::Local;
 use crossbeam_channel::bounded;
 
 mod control;
-use control::{init, Config, ControlState, ExecState, SharedState};
+use control::{init, Backend, Config, ControlStatus, ExecState, SharedState};
 
 mod zaber;
+mod ramp;
 
 mod opcua;
 use opcua::run_opcua;
 
 mod web;
-use web::run_web_server;
+use web::{run_web_server, WebState};
+
 
 fn main() {
     let (tx_stop, rx_stop) = bounded::<()>(1);
@@ -24,7 +26,7 @@ fn main() {
         position_parallel: 0.,
         busy_cross: false,
         busy_parallel: false,
-        control_state: ControlState::Disconnected,
+        control_state: ControlStatus::Stopped,
         error: None,
         timestamp: Local::now(),
     };
@@ -38,6 +40,8 @@ fn main() {
             voltage_min: 5.,
             voltage_max: 100.,
             serial_device: "/dev/ttyACM0".to_string(),
+            opcua_config_path: "opcua_config.conf".into(),
+            backend: Backend::Ramp,
         })),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
@@ -45,13 +49,19 @@ fn main() {
 
 
     let queue_clone = Arc::clone(&state_channel);
-    std::thread::spawn(|| run_opcua(queue_clone));
+    let opcua_state = {
+        let config_path = state.config.read().unwrap().opcua_config_path.clone();
+        run_opcua(queue_clone, config_path)
+    };
 
-    let queue_clone = state_channel;
-    let tx_stop_clone = tx_stop.clone();
-    let tx_start_clone = tx_start.clone();
-    let config_clone = state.config.clone();
-    std::thread::spawn(|| run_web_server(queue_clone, tx_start_clone, tx_stop_clone, config_clone));
+    let web_state = WebState{
+        zaber_state: state_channel,
+        tx_stop_control: tx_stop.clone(),
+        tx_start_control: tx_start.clone(),
+        config: state.config.clone(),
+        opcua_state,
+    };
+    std::thread::spawn(|| run_web_server(web_state));
 
 
     let mut out = state.out_channel.write().unwrap();
@@ -66,6 +76,11 @@ fn main() {
         }
 
         if stopped {
+            state.shared.control_state = ControlStatus::Stopped;
+            {
+                let mut out = state.out_channel.write().unwrap();
+                *out = state.shared.clone();
+            }
             dbg!("stopped - wait for start");
             let _ = rx_start.recv();
         }
@@ -75,7 +90,7 @@ fn main() {
             Ok(_) => stopped = true,
             Err(e) => {
                 dbg!(&e);
-                state.shared.control_state = ControlState::Disconnected;
+                state.shared.control_state = ControlStatus::Error;
                 state.shared.error = Some(e.to_string());
                 state.shared.timestamp = Local::now();
 

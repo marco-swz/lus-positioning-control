@@ -1,6 +1,8 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
-use opcua::server::prelude::*;
+use opcua::server::state::ServerState;
+use opcua::{server::prelude::*, sync::RwLock};
 
 use crate::control::StateChannel;
 
@@ -101,22 +103,30 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (Nod
     return folders;
 }
 
-pub fn run_opcua(zaber_state: StateChannel) {
-    let mut server: Server = ServerBuilder::new()
-        .application_name("zaber-opcua")
-        .application_uri("urn:zaber-opcua")
-        .discovery_urls(vec!["/".into()])
-        .endpoint(
-            "none",
-            ServerEndpoint::new_none("/", &[ANONYMOUS_USER_TOKEN_ID.into()]),
-        )
-        .trust_client_certs()
-        .multi_threaded_executor()
-        .create_sample_keypair(false)
-        .discovery_server_url(None)
-        .host_and_port(hostname().unwrap(), 4343)
-        .server()
-        .unwrap();
+pub fn run_opcua(zaber_state: StateChannel, config_path: PathBuf) -> Arc<RwLock<ServerState>> {
+    let config: Result<ServerConfig, ()> = ServerConfig::load(&config_path);
+
+    let mut server = match config {
+        Ok(config) => Server::from(config),
+        Err(e) => {
+            dbg!("Opcua config error: {} -> using default", e);
+            ServerBuilder::new()
+                .application_name("zaber-opcua")
+                .application_uri("urn:zaber-opcua")
+                .discovery_urls(vec!["/".into()])
+                .endpoint(
+                    "none",
+                    ServerEndpoint::new_none("/", &[ANONYMOUS_USER_TOKEN_ID.into()]),
+                )
+                .trust_client_certs()
+                .multi_threaded_executor()
+                .create_sample_keypair(false)
+                .discovery_server_url(None)
+                .host_and_port(hostname().unwrap(), 4343)
+                .server()
+                .unwrap()
+        }
+    };
 
     let ns = {
         let address_space = server.address_space();
@@ -124,10 +134,10 @@ pub fn run_opcua(zaber_state: StateChannel) {
         address_space.register_namespace("urn:zaber-opcua").unwrap()
     };
 
-    //add_methods(&mut server, ns, zaber_state);
-
     let _node_ids = add_axis_variables(&mut server, ns, Arc::clone(&zaber_state));
-    //add_axis_methods(&mut server, ns, node_id, zaber, 1);
 
-    server.run();
+    let state = server.server_state();
+    std::thread::spawn(|| server.run());
+
+    return state;
 }

@@ -1,7 +1,6 @@
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Result, anyhow};
-use chrono::Local;
 use zproto::{
     ascii::{
         response::{check, Status},
@@ -9,7 +8,7 @@ use zproto::{
     },
     backend::Backend,
 };
-use crate::control::{run, ControlState, ExecState};
+use crate::control::{run, ExecState};
 
 type ZaberConn<T> = Port<'static, T>;
 
@@ -18,32 +17,22 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
         state.config.read().unwrap().serial_device.clone()
     };
 
-    let mut zaber_conn = Port::open_serial(&serial_device)?;
-
-    state.shared.control_state = ControlState::Init;
-    state.shared.timestamp = Local::now();
-
-    let mut out = state.out_channel.write().unwrap();
-    *out = state.shared.clone();
-    drop(out);
+    let mut zaber_conn = match Port::open_serial(&serial_device) {
+        Ok(zaber_conn) => zaber_conn,
+        Err(e) => return Err(anyhow!("Failed to open Zaber serial port '{}': {}", serial_device, e)),
+    };
 
     zaber_conn.command_reply((1, "lockstep 1 setup disable"))?.check(check::unchecked())?;
 
     let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
 
     zaber_conn.poll_until_idle(1, check::flag_ok())?;
-    println!("cp");
-    //zaber_conn.poll_until_idle(2, check::flag_ok());
-
-    println!("cp1");
+    zaber_conn.poll_until_idle(2, check::flag_ok())?;
 
     zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
 
-    println!("cp2");
-
     zaber_conn.command_reply((1, "lockstep 1 setup enable 1 2"))?.flag_ok()?;
 
-    println!("cp3");
     let zaber_conn = Rc::new(RefCell::new(zaber_conn));
 
     let get_voltage = || get_voltage_zaber(Rc::clone(&zaber_conn));
