@@ -7,7 +7,7 @@
         rust-overlay.url = "github:oxalica/rust-overlay";
     };
 
-    outputs = inputs@{ self, nixpkgs, flake-utils, rust-overlay, ... }:
+    outputs = { nixpkgs, flake-utils, rust-overlay, ... }:
         flake-utils.lib.eachSystem [ "x86_64-linux" ] (system: 
             let
                 pkgs = import nixpkgs {
@@ -17,7 +17,7 @@
                     ];
                 };
 
-            in rec {
+            in {
                 devShell = pkgs.mkShell {
                     buildInputs = with pkgs; [ 
                         cmake

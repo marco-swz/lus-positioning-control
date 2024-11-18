@@ -13,10 +13,14 @@ mod opcua;
 use opcua::run_opcua;
 
 mod web;
+//use tracing::Level;
 use web::{run_web_server, WebState};
 
-
 fn main() {
+    tracing_subscriber::fmt::init();
+    //let subscriber = tracing_subscriber::fmt().with_max_level(Level::DEBUG).finish();
+    //tracing::subscriber::set_global_default(subscriber).unwrap();
+
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
@@ -71,7 +75,6 @@ fn main() {
     let mut stopped = true;
     loop {
         if let Ok(_) = rx_stop.try_recv() {
-            // TODO(marco): Fix stop
             stopped = true;
         }
 
@@ -81,15 +84,15 @@ fn main() {
                 let mut out = state.out_channel.write().unwrap();
                 *out = state.shared.clone();
             }
-            dbg!("stopped - wait for start");
+            tracing::debug!("control stopped - wait for start");
             let _ = rx_start.recv();
         }
 
-        dbg!("try init");
+        tracing::debug!("trying to init control");
         match init(&mut state) {
             Ok(_) => stopped = true,
             Err(e) => {
-                dbg!(&e);
+                tracing::error!("control error: {}", &e);
                 state.shared.control_state = ControlStatus::Error;
                 state.shared.error = Some(e.to_string());
                 state.shared.timestamp = Local::now();

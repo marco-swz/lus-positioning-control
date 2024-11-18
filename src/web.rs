@@ -25,6 +25,7 @@ pub struct WebState {
 }
 
 async fn handle_default() -> Html<String> {
+    tracing::debug!("GET / requested");
     Html(format!(
         "
 <head>
@@ -44,22 +45,34 @@ async fn handle_default() -> Html<String> {
 }
 
 async fn handle_refresh(State(state): State<WebState>) -> Json<SharedState> {
-    dbg!("get refresh");
+    tracing::debug!("GET /refresh requested");
     return Json(state.zaber_state.read().unwrap().clone());
 }
 
 async fn handle_post_config(State(state): State<WebState>, Form(data): Form<Config>) {
-    dbg!("post config begin");
+    tracing::debug!("POST /config requested");
     let _ = state.tx_stop_control.try_send(());
 
     let mut config = state.config.write().unwrap();
     *config = data;
     drop(config);
-    dbg!("post config end");
 }
 
+
+//async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerState> {
+//    tracing::debug!("GET /opcua requested");
+//
+//    let mut opcua = state.opcua_state.read();
+//
+//    //return Json(opcua);
+//    //TODO(marco): Set new state
+//
+//    drop(opcua);
+//}
+
+
 async fn handle_post_opcua(State(state): State<WebState>, Form(data): Form<Config>) {
-    dbg!("post opcua begin");
+    tracing::debug!("POST /opcua requested");
 
     let mut opcua = state.opcua_state.write();
     opcua.abort();
@@ -71,22 +84,19 @@ async fn handle_post_opcua(State(state): State<WebState>, Form(data): Form<Confi
 }
 
 async fn handle_post_start(State(state): State<WebState>) {
-    dbg!("post start begin");
+    tracing::debug!("POST start requested");
     let _ = state.tx_start_control.try_send(());
-    dbg!("post start end");
 }
 
 async fn handle_post_stop(State(state): State<WebState>) {
-    dbg!("post stop begin");
+    tracing::debug!("POST stop requested");
     let _ = state.tx_stop_control.try_send(());
-    dbg!("post stop end");
 }
 
 async fn handle_get_config(State(state): State<WebState>) -> Json<Config> {
-    dbg!("get config begin");
+    tracing::debug!("GET config requested");
     let config = { state.config.read().unwrap().clone() };
 
-    dbg!("get config end");
     Json(config)
 }
 
@@ -113,6 +123,7 @@ pub fn run_web_server(
         .route("/config", get(handle_get_config))
         .with_state(state);
 
+    tracing::info!("Starting webserver on port 8080");
     let _ = rt.block_on(async {
         let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
         axum::serve(listener, app).await.unwrap();

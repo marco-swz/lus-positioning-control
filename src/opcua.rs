@@ -6,58 +6,61 @@ use opcua::{server::prelude::*, sync::RwLock};
 
 use crate::control::StateChannel;
 
-fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (NodeId, NodeId) {
+fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
     let address_space = server.address_space();
 
-    let node_position_cross = NodeId::new(ns, "position");
-    let node_busy_cross = NodeId::new(ns, "busy");
-    let node_position_parallel = NodeId::new(ns, "position");
-    let node_busy_parallel = NodeId::new(ns, "busy");
+    let node_position_cross = NodeId::new(ns, "position_cross");
+    let node_busy_cross = NodeId::new(ns, "busy_cross");
+    let node_position_parallel = NodeId::new(ns, "position_parallel");
+    let node_busy_parallel = NodeId::new(ns, "busy_parallel");
     let node_status = NodeId::new(ns, "status");
 
     let root_id = NodeId::objects_folder_id();
 
-    let folders = {
+    {
         let mut address_space = address_space.write();
 
         let folder_cross_id = address_space
             .add_folder("cross-slide", "cross-slide", &root_id)
             .unwrap();
-        let _ = address_space.add_variables(
-            vec![
-                Variable::new(&node_position_cross, "position", "position [mm]", 0 as f64),
-                Variable::new(&node_busy_cross, "busy", "busy", false),
-            ],
-            &folder_cross_id,
-        );
+
+        VariableBuilder::new(&node_position_cross, "position", "position [mm]")
+            .value(0.)
+            .data_type(DataTypeId::Double)
+            .organized_by(&folder_cross_id)
+            .insert(&mut address_space);
+
+        VariableBuilder::new(&node_busy_cross, "busy", "busy")
+            .data_type(DataTypeId::Boolean)
+            .organized_by(&folder_cross_id)
+            .value(false)
+            .insert(&mut address_space);
 
         let folder_parallel_id = address_space
             .add_folder("parallel-slide", "parallel-slide", &root_id)
             .unwrap();
-        let _ = address_space.add_variables(
-            vec![
-                Variable::new(
-                    &node_position_parallel,
-                    "position",
-                    "position [mm]",
-                    0 as f64,
-                ),
-                Variable::new(&node_busy_parallel, "busy", "busy", false),
-            ],
-            &folder_parallel_id,
-        );
 
-        address_space.add_variables(
-            vec![Variable::new(
-                &node_status,
-                "status",
-                "status",
-                UAString::from("Init"),
-            )],
-            &root_id,
-        );
+        VariableBuilder::new(&node_position_parallel, "position", "position [mm]")
+            .value(0.)
+            .data_type(DataTypeId::Double)
+            .organized_by(&folder_parallel_id)
+            .insert(&mut address_space);
 
-        (folder_cross_id, folder_parallel_id)
+        VariableBuilder::new(&node_busy_parallel, "busy", "busy")
+            .data_type(DataTypeId::Boolean)
+            .organized_by(&folder_parallel_id)
+            .value(false)
+            .insert(&mut address_space);
+
+        let folder_general_id = address_space
+            .add_folder("general", "general", &root_id)
+            .unwrap();
+
+        VariableBuilder::new(&node_status, "status", "status")
+            .value(UAString::from("Init"))
+            .data_type(DataTypeId::String)
+            .organized_by(&folder_general_id)
+            .insert(&mut address_space);
     };
 
     server.add_polling_action(1000, move || {
@@ -99,17 +102,17 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) -> (Nod
             &now,
         );
     });
-
-    return folders;
 }
 
 pub fn run_opcua(zaber_state: StateChannel, config_path: PathBuf) -> Arc<RwLock<ServerState>> {
+    tracing::debug!("Start opcua server");
+
     let config: Result<ServerConfig, ()> = ServerConfig::load(&config_path);
 
     let mut server = match config {
         Ok(config) => Server::from(config),
-        Err(e) => {
-            dbg!("Opcua config error: {} -> using default", e);
+        Err(_) => {
+            tracing::error!("Opcua config error -> using default");
             ServerBuilder::new()
                 .application_name("zaber-opcua")
                 .application_uri("urn:zaber-opcua")
@@ -134,7 +137,7 @@ pub fn run_opcua(zaber_state: StateChannel, config_path: PathBuf) -> Arc<RwLock<
         address_space.register_namespace("urn:zaber-opcua").unwrap()
     };
 
-    let _node_ids = add_axis_variables(&mut server, ns, Arc::clone(&zaber_state));
+    add_axis_variables(&mut server, ns, Arc::clone(&zaber_state));
 
     let state = server.server_state();
     std::thread::spawn(|| server.run());

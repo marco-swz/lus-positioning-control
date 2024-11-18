@@ -2,6 +2,7 @@
     <div id="tabs">
         <div id="tab-control" class="tab active" onclick="handleClickTab('control')">Control</div>
         <div id="tab-config" class="tab" onclick="handleClickTab('config')">Configuration</div>
+        <div id="tab-opcua" class="tab" onclick="handleClickTab('opcua')">OPC-UA</div>
     </div>
     <div id="control" class="content visible">
         <div class="grid">
@@ -31,7 +32,7 @@
             <div class="grid">
                 <label>Serial Port</label>
                 <input name="serial_device" value="" required/>
-                <label>Refresh Rate</label>
+                <label>Refresh Rate [ms]</label>
                 <input name="cycle_time" value="" required/>
                 <label>Min. Voltage</label>
                 <input name="voltage_min" value="" required/>
@@ -41,6 +42,13 @@
                 <input name="restart_timeout" value="" required/>
             </div>
             <button type="button" onclick="handleClickSaveConfig()">Save</button>
+        </form>
+    </div>
+    <div id="opcua" class="content">
+        <form id="form-opcua" action="/opcua" method="post">
+            <div class="grid">
+            </div>
+            <button type="button" onclick="handleClickSaveOpcua()">Save</button>
         </form>
     </div>
 </div>

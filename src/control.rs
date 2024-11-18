@@ -75,6 +75,7 @@ pub fn init(state: &mut ExecState) -> Result<()> {
         state.config.read().unwrap().backend.clone()
     };
 
+    tracing::debug!("Init control with backend {:?}", &backend);
     return match backend {
         Backend::Zaber => init_zaber(state),
         Backend::Ramp => init_ramp(state),
@@ -96,6 +97,7 @@ pub fn run(
     let cycle_time = config.cycle_time;
     drop(config);
 
+    tracing::info!("Starting control loop");
     loop {
         let voltage_gleeble = get_voltage()?;
         dbg!(&voltage_gleeble);
@@ -122,6 +124,7 @@ pub fn run(
         }
     }
 
+    tracing::info!("Control loop stopped");
     state.shared.control_state = ControlStatus::Stopped;
     state.shared.timestamp = Local::now();
     let mut out = state.out_channel.write().unwrap();

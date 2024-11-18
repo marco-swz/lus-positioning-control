@@ -57,5 +57,25 @@ function loadConfig() {
         );
 }
 
+function loadOpcua() {
+    fetch('/opcua')
+        .then(x => x.json())
+        .then(x => {
+            let $form = document.querySelector('#form-opcua > div');
+            Object.entries(x)
+            .forEach(function([key, val]) {
+                let $label = document.createElement('label');
+                $input.name = key;
+                let $input = document.createElement('input');
+                $label.innerHTML = key;
+                $label.value = val;
+
+                $form.append($label);
+                $form.append($input);
+            })
+        });
+}
+
 handleClickRefresh();
 loadConfig();
+loadOpcua();
