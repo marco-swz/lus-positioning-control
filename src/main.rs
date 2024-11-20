@@ -13,13 +13,10 @@ mod opcua;
 use opcua::run_opcua;
 
 mod web;
-//use tracing::Level;
 use web::{run_web_server, WebState};
 
 fn main() {
     tracing_subscriber::fmt::init();
-    //let subscriber = tracing_subscriber::fmt().with_max_level(Level::DEBUG).finish();
-    //tracing::subscriber::set_global_default(subscriber).unwrap();
 
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
@@ -66,7 +63,6 @@ fn main() {
         opcua_state,
     };
     std::thread::spawn(|| run_web_server(web_state));
-
 
     let mut out = state.out_channel.write().unwrap();
     *out = shared_state.clone();

@@ -1,3 +1,23 @@
+button {
+    background-color: white;
+    padding: 7px;
+    border-radius: 4px;
+    border: 1px solid grey;
+    outline: none;
+    margin-top: 15px;
+}
+
+select {
+    background-color: white;
+    height: 25px;
+    border: 1px solid grey;
+    outline: none;
+}
+
+button:hover {
+    background-color: whitesmoke;
+}
+
 #main {
     position: absolute;
     left: 50%;
@@ -15,6 +35,10 @@
     border-top-left-radius: 0;
 }
 
+#control input {
+    color: black;
+}
+
 .grid {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -27,6 +51,10 @@
 
 #tabs {
     display: flex;
+}
+
+form {
+    margin-bottom: 0;
 }
 
 .tab {
@@ -46,6 +74,3 @@
     background-color: white;
 }
 
-#btn-refresh {
-    margin-top: 15px;
-}

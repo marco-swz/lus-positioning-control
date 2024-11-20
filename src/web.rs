@@ -7,7 +7,7 @@ use axum::{
     Form, Json, Router,
 };
 use crossbeam_channel::Sender;
-use opcua::{server::state::ServerState, sync};
+use opcua::{server::{config::ServerConfig, state::ServerState}, sync};
 
 use crate::control::{Config, SharedState};
 
@@ -59,17 +59,13 @@ async fn handle_post_config(State(state): State<WebState>, Form(data): Form<Conf
 }
 
 
-//async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerState> {
-//    tracing::debug!("GET /opcua requested");
-//
-//    let mut opcua = state.opcua_state.read();
-//
-//    //return Json(opcua);
-//    //TODO(marco): Set new state
-//
-//    drop(opcua);
-//}
+async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerConfig> {
+    tracing::debug!("GET /opcua requested");
 
+    let opcua = state.opcua_state.read();
+
+    return Json(opcua.config.read().clone());
+}
 
 async fn handle_post_opcua(State(state): State<WebState>, Form(data): Form<Config>) {
     tracing::debug!("POST /opcua requested");
@@ -113,6 +109,8 @@ pub fn run_web_server(
         .route("/refresh", get(handle_refresh))
         .with_state(state.clone())
         .route("/config", post(handle_post_config))
+        .with_state(state.clone())
+        .route("/opcua", get(handle_get_opcua))
         .with_state(state.clone())
         .route("/opcua", post(handle_post_opcua))
         .with_state(state.clone())

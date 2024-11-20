@@ -11,7 +11,12 @@ function handleClickRefresh() {
         .then(x => x.json())
         .then(x => Object.entries(x)
             .forEach(function([key, val]) {
-                document.querySelector('#' + key).innerHTML = val;
+                if (key === "timestamp") {
+                    let [date, time] = val.split('T');
+                    time = time.split('.')[0];
+                    val = date + ' ' + time;
+                }
+                document.querySelector('#' + key).value = val;
             })
         );
 }
@@ -52,6 +57,7 @@ function loadConfig() {
         .then(x => x.json())
         .then(x => Object.entries(x)
             .forEach(function([key, val]) {
+                console.log(key, val);
                 document.querySelector(`[name=${key}]`).value = val;
             })
         );
@@ -63,16 +69,17 @@ function loadOpcua() {
         .then(x => {
             let $form = document.querySelector('#form-opcua > div');
             Object.entries(x)
-            .forEach(function([key, val]) {
-                let $label = document.createElement('label');
-                $input.name = key;
-                let $input = document.createElement('input');
-                $label.innerHTML = key;
-                $label.value = val;
+                .forEach(function([key, val]) {
+                    let $label = document.createElement('label');
+                    $label.innerHTML = key;
 
-                $form.append($label);
-                $form.append($input);
-            })
+                    let $input = document.createElement('input');
+                    $input.name = key;
+                    $input.value = val;
+
+                    $form.append($label);
+                    $form.append($input);
+                })
         });
 }
 

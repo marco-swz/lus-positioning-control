@@ -7,21 +7,21 @@
     <div id="control" class="content visible">
         <div class="grid">
             <span>Status</span>
-            <span id="control_state"></span>
+            <input id="control_state" disabled/>
             <span>Voltage</span>
-            <span id="voltage_gleeble"></span>
+            <input id="voltage_gleeble" disabled/>
             <span>Position Parallel</span>
-            <span id="position_parallel"></span>
+            <input id="position_parallel" disabled/>
             <span>Busy Parallel</span>
-            <span id="busy_parallel"></span>
+            <input id="busy_parallel" disabled/>
             <span>Position Cross</span>
-            <span id="position_cross"></span>
+            <input id="position_cross" disabled/>
             <span>Busy Cross</span>
-            <span id="busy_cross"></span>
+            <input id="busy_cross" disabled/>
             <span>Error</span>
-            <span id="error"></span>
+            <input id="error" disabled/>
             <span>Last Change</span>
-            <span id="timestamp"></span>
+            <input id="timestamp" disabled/>
         </div>
         <button id="btn-refresh" onclick="handleClickRefresh()">Refresh</button>
         <button id="btn-start" onclick="handleClickStart()">Start</button>
@@ -40,6 +40,13 @@
                 <input name="voltage_max" value="" required/>
                 <label>Restart Timeout</label>
                 <input name="restart_timeout" value="" required/>
+                <label>OPCU-UA Config Path</label>
+                <input name="opcua_config_path" value="" required/>
+                <label>Backend</label>
+                <select name="backend">
+                    <option value="Zaber">Zaber</option>
+                    <option value="Ramp">Ramp</option>
+                </select>
             </div>
             <button type="button" onclick="handleClickSaveConfig()">Save</button>
         </form>
