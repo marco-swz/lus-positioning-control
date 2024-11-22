@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Local};
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, Sender};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::{
@@ -16,6 +16,7 @@ pub type StopChannel = Receiver<()>;
 pub enum Backend {
     Zaber,
     Ramp,
+    Manual,
 }
 
 #[serde_as]
@@ -67,6 +68,7 @@ pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
     pub rx_stop: StopChannel,
+    pub voltage_manual: Arc<RwLock<f64>>,
     pub config: Arc<RwLock<Config>>,
 }
 
@@ -77,7 +79,7 @@ pub fn init(state: &mut ExecState) -> Result<()> {
 
     tracing::debug!("Init control with backend {:?}", &backend);
     return match backend {
-        Backend::Zaber => init_zaber(state),
+        Backend::Zaber | Backend::Manual => init_zaber(state),
         Backend::Ramp => init_ramp(state),
     };
 }

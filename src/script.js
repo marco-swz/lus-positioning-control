@@ -1,3 +1,6 @@
+/** @type {?WebSocket} */
+var gSocket = null;
+
 function handleClickTab(type) {
     document.getElementsByClassName('tab active')[0].classList.remove('active');
     document.querySelector('#tab-' + type).classList.add('active');
@@ -52,12 +55,17 @@ function handleClickStop() {
         .then(() => handleClickRefresh());
 }
 
+function handleMouseupSliderPos() {
+    console.assert(gSocket != null, 'Websocket not initialized');
+    console.log(this.value);
+    gSocket.send(this.value);
+}
+
 function loadConfig() {
     fetch('/config')
         .then(x => x.json())
         .then(x => Object.entries(x)
             .forEach(function([key, val]) {
-                console.log(key, val);
                 document.querySelector(`[name=${key}]`).value = val;
             })
         );
@@ -83,6 +91,25 @@ function loadOpcua() {
         });
 }
 
+function connectWebsocketManual() {
+    gSocket = new WebSocket('ws://localhost:8080/ws');
+
+    // Listen for messages
+    gSocket.addEventListener("message", (event) => {
+        console.log("Message from server ", event.data);
+    });
+
+}
+
 handleClickRefresh();
 loadConfig();
 loadOpcua();
+connectWebsocketManual();
+
+document.addEventListener('DOMContentLoaded', () => {
+    const $inpTarget = document.querySelector('#inp-pos-target');
+    document.querySelector('#inp-pos').addEventListener('input', (e) => {
+        $inpTarget.value = e.currentTarget.value;
+    })
+
+});

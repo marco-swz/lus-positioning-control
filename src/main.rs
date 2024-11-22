@@ -21,6 +21,8 @@ fn main() {
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
+    let voltage_manual = Arc::new(RwLock::new(0.));
+
     let shared_state = SharedState {
         voltage_gleeble: 0.,
         position_cross: 0.,
@@ -46,6 +48,7 @@ fn main() {
         })),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
+        voltage_manual: Arc::clone(&voltage_manual),
     };
 
 
@@ -61,6 +64,8 @@ fn main() {
         tx_start_control: tx_start.clone(),
         config: state.config.clone(),
         opcua_state,
+        voltage_manual,
+
     };
     std::thread::spawn(|| run_web_server(web_state));
 

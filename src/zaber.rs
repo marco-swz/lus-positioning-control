@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}};
 
 use anyhow::{Result, anyhow};
 use zproto::{
@@ -8,13 +8,14 @@ use zproto::{
     },
     backend::Backend,
 };
-use crate::control::{run, ExecState};
+use crate::control::{self, run, ExecState};
 
 type ZaberConn<T> = Port<'static, T>;
 
 pub fn init_zaber(state: &mut ExecState) -> Result<()> {
-    let serial_device = {
-        state.config.read().unwrap().serial_device.clone()
+    let (serial_device, backend) = {
+        let s = state.config.read().unwrap();
+        (s.serial_device.clone(), s.backend.clone())
     };
 
     let mut zaber_conn = match Port::open_serial(&serial_device) {
@@ -35,18 +36,38 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 
     let zaber_conn = Rc::new(RefCell::new(zaber_conn));
 
-    let get_voltage = || get_voltage_zaber(Rc::clone(&zaber_conn));
     let get_pos = || get_pos_zaber(Rc::clone(&zaber_conn));
     let move_parallel = |pos| move_parallel_zaber(Rc::clone(&zaber_conn), pos);
     let move_cross = |pos| move_cross_zaber(Rc::clone(&zaber_conn), pos);
 
-    return run(state, get_voltage, get_pos, move_parallel, move_cross);
+    match backend {
+        control::Backend::Manual => {
+            let voltage_shared = Arc::clone(&state.voltage_manual);
+            let voltage  = Rc::new(RefCell::new(0.));
+            let get_voltage = move || get_voltage_manual(Rc::clone(&voltage), Arc::clone(&voltage_shared));
+            return run(state, get_voltage, get_pos, move_parallel, move_cross);
+        },
+        _ => {
+            let get_voltage = || get_voltage_zaber(Rc::clone(&zaber_conn));
+            return run(state, get_voltage, get_pos, move_parallel, move_cross);
+        },
+    };
 }
 
 pub fn get_voltage_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Result<f64> {
     let cmd = format!("io get ai 1");
     let reply = zaber_conn.borrow_mut().command_reply((1, cmd))?.flag_ok()?;
     return Ok(reply.data().parse()?);
+}
+
+fn get_voltage_manual(voltage: Rc<RefCell<f64>>, voltage_shared: Arc<RwLock<f64>>) -> Result<f64> {
+    let ref mut voltage = *voltage.borrow_mut(); 
+    let Ok(shared) = voltage_shared.try_read() else {
+        return Ok(*voltage);
+    };
+    *voltage = *shared;
+
+    return Ok(*shared);
 }
 
 pub fn get_pos_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Result<(f64, f64, bool, bool)> {

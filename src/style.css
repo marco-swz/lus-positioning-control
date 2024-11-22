@@ -74,3 +74,15 @@ form {
     background-color: white;
 }
 
+#cont-slider-pos {
+    display: flex;
+
+    & input[type=number] {
+        width: 75px;
+    }
+
+    & input[type=range] {
+        width: 100%;
+    }
+}
+

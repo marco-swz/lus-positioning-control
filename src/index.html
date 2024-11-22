@@ -1,50 +1,65 @@
 <div id="main">
     <div id="tabs">
         <div id="tab-control" class="tab active" onclick="handleClickTab('control')">Control</div>
+        <div id="tab-manual" class="tab" onclick="handleClickTab('manual')">Manual</div>
         <div id="tab-config" class="tab" onclick="handleClickTab('config')">Configuration</div>
         <div id="tab-opcua" class="tab" onclick="handleClickTab('opcua')">OPC-UA</div>
     </div>
     <div id="control" class="content visible">
         <div class="grid">
             <span>Status</span>
-            <input id="control_state" disabled/>
+            <input id="control_state" disabled />
             <span>Voltage</span>
-            <input id="voltage_gleeble" disabled/>
+            <input id="voltage_gleeble" disabled />
             <span>Position Parallel</span>
-            <input id="position_parallel" disabled/>
+            <input id="position_parallel" disabled />
             <span>Busy Parallel</span>
-            <input id="busy_parallel" disabled/>
+            <input id="busy_parallel" disabled />
             <span>Position Cross</span>
-            <input id="position_cross" disabled/>
+            <input id="position_cross" disabled />
             <span>Busy Cross</span>
-            <input id="busy_cross" disabled/>
+            <input id="busy_cross" disabled />
             <span>Error</span>
-            <input id="error" disabled/>
+            <input id="error" disabled />
             <span>Last Change</span>
-            <input id="timestamp" disabled/>
+            <input id="timestamp" disabled />
         </div>
         <button id="btn-refresh" onclick="handleClickRefresh()">Refresh</button>
         <button id="btn-start" onclick="handleClickStart()">Start</button>
         <button id="btn-stop" onclick="handleClickStop()">Stop</button>
     </div>
+    <div id="Manual" class="content">
+        <div id="cont-slider-pos">
+            <input id="inp-pos-min" type="number" value="0" onchange="document.querySelector('#inp-pos').min = this.value"/>
+            <input id="inp-pos" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos.bind(this)()" />
+            <input id="inp-pos-max" type="number" value="100" onchange="document.querySelector('#inp-pos').max = this.value"/>
+        </div>
+        <div class="grid">
+            <label for="inp-pos-target">Target Position</label>
+            <input id="inp-pos-target" disabled/>
+            <label for="inp-pos-actual">Actual Position</label>
+            <input id="inp-pos-actual" disabled/>
+        </div>
+    </div>
     <div id="config" class="content">
         <form id="form-config" action="/config" method="post">
             <div class="grid">
                 <label>Serial Port</label>
-                <input name="serial_device" value="" required/>
+                <input name="serial_device" value="" required />
                 <label>Refresh Rate [ms]</label>
-                <input name="cycle_time" value="" required/>
+                <input name="cycle_time" value="" required />
                 <label>Min. Voltage</label>
-                <input name="voltage_min" value="" required/>
+                <input name="voltage_min" value="" required />
                 <label>Max. Voltage</label>
-                <input name="voltage_max" value="" required/>
+                <input name="voltage_max" value="" required />
                 <label>Restart Timeout</label>
-                <input name="restart_timeout" value="" required/>
+                <input name="restart_timeout" value="" required />
                 <label>OPCU-UA Config Path</label>
-                <input name="opcua_config_path" value="" required/>
+                <input name="opcua_config_path" value="" required />
                 <label>Backend</label>
                 <select name="backend">
                     <option value="Zaber">Zaber</option>
+                    <option value="Manual">Manual</option>
                     <option value="Ramp">Ramp</option>
                 </select>
             </div>

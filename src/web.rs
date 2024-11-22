@@ -1,8 +1,8 @@
-use std::sync::{Arc, RwLock};
+use std::{sync::{Arc, RwLock}};
 
 use axum::{
-    extract::State,
-    response::Html,
+    extract::{ws::WebSocket, State, WebSocketUpgrade},
+    response::{Html, IntoResponse},
     routing::{get, post},
     Form, Json, Router,
 };
@@ -20,6 +20,7 @@ pub struct WebState {
     pub zaber_state: Arc<RwLock<SharedState>>,
     pub tx_start_control: Sender<()>,
     pub tx_stop_control: Sender<()>,
+    pub voltage_manual: Arc<RwLock<f64>>,
     pub config: Arc<RwLock<Config>>,
     pub opcua_state: Arc<sync::RwLock<ServerState>>,
 }
@@ -96,6 +97,40 @@ async fn handle_get_config(State(state): State<WebState>) -> Json<Config> {
     Json(config)
 }
 
+async fn handle_manual_init(
+    ws: WebSocketUpgrade,
+    State(state): State<WebState>,
+) -> impl IntoResponse {
+    tracing::debug!("Manual init");
+    ws.on_upgrade(move |socket| handle_manual(socket, state))
+}
+
+async fn handle_manual(mut socket: WebSocket, state: WebState) {
+
+    while let Some(msg) = socket.recv().await {
+        let msg = if let Ok(msg) = msg {
+            msg
+        } else {
+            return; // client disconnected
+        };
+
+        let Ok(msg) = msg.to_text() else {
+            continue;
+        };
+
+        let Ok(voltage) = str::parse::<f64>(msg) else {
+            continue;
+        };
+
+        {
+            match state.voltage_manual.write() {
+                Err(e) => tracing::error!("Failed to aquire manual voltage lock: {e}"),
+                Ok(mut v) => *v = voltage,
+            };
+        }
+    }
+}
+
 pub fn run_web_server(
     state: WebState,
 ) {
@@ -119,6 +154,8 @@ pub fn run_web_server(
         .route("/stop", post(handle_post_stop))
         .with_state(state.clone())
         .route("/config", get(handle_get_config))
+        .with_state(state.clone())
+        .route("/ws", get(handle_manual_init))
         .with_state(state);
 
     tracing::info!("Starting webserver on port 8080");
