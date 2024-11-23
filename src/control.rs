@@ -7,7 +7,7 @@ use std::{
     fmt::Display, path::PathBuf, sync::{Arc, RwLock}, time::Duration
 };
 
-use crate::{ramp::init_ramp, zaber::init_zaber};
+use crate::{ramp::init_ramp, zaber::{init_zaber, MAX_POS, MICROSTEP_SIZE}};
 
 pub type StateChannel = Arc<RwLock<SharedState>>;
 pub type StopChannel = Receiver<()>;
@@ -102,12 +102,10 @@ pub fn run(
     tracing::info!("Starting control loop");
     loop {
         let voltage_gleeble = get_voltage()?;
-        dbg!(&voltage_gleeble);
+        tracing::debug!("Voltage reading {voltage_gleeble}");
         state.shared.voltage_gleeble = voltage_gleeble;
 
-        let target_position_parallel = voltage_gleeble - voltage_min / (voltage_max - voltage_min);
-
-        move_parallel(target_position_parallel)?;
+        let target_position_parallel = (MAX_POS as f64 * MICROSTEP_SIZE) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
 
         let (pos_parallel, pos_cross, busy_parallel, busy_cross) = get_pos()?;
         state.shared.position_parallel = pos_parallel;
@@ -115,6 +113,11 @@ pub fn run(
         state.shared.busy_parallel = busy_parallel;
         state.shared.busy_cross = busy_cross;
         state.shared.timestamp = Local::now();
+
+        tracing::debug!("Position parallel: target={target_position_parallel} actual={pos_parallel}");
+        if target_position_parallel != pos_parallel {
+            move_parallel(target_position_parallel)?;
+        }
 
         if let Ok(mut out) = state.out_channel.try_write() {
             *out = state.shared.clone();

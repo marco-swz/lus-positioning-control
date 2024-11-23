@@ -10,6 +10,9 @@ use zproto::{
 };
 use crate::control::{self, run, ExecState};
 
+pub const MICROSTEP_SIZE: f64 = 0.49609375; //µm
+pub const MAX_POS: usize = 201574; // microsteps
+
 type ZaberConn<T> = Port<'static, T>;
 
 pub fn init_zaber(state: &mut ExecState) -> Result<()> {
@@ -23,7 +26,7 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
         Err(e) => return Err(anyhow!("Failed to open Zaber serial port '{}': {}", serial_device, e)),
     };
 
-    zaber_conn.command_reply((1, "lockstep 1 setup disable"))?.check(check::unchecked())?;
+    zaber_conn.command_reply_n("system restore", 2, check::unchecked())?;
 
     let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
 
@@ -71,12 +74,11 @@ fn get_voltage_manual(voltage: Rc<RefCell<f64>>, voltage_shared: Arc<RwLock<f64>
 }
 
 pub fn get_pos_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Result<(f64, f64, bool, bool)> {
-    let cmd = format!("get pos");
     let mut pos_parallel = 0.;
     let mut busy_parallel = false;
     let mut pos_cross = 0.;
     let mut busy_cross = false;
-    for reply in zaber_conn.borrow_mut().command_reply_n_iter(cmd, 2)? {
+    for reply in zaber_conn.borrow_mut().command_reply_n_iter("get pos", 2)? {
         let reply = reply?.check(check::unchecked())?;
         match reply.target().device() {
             1 => {
@@ -108,17 +110,17 @@ pub fn get_pos_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Resul
             }
         }
     }
-    return Ok((pos_parallel, pos_cross, busy_parallel, busy_cross));
+    return Ok((pos_parallel * MICROSTEP_SIZE, pos_cross * MICROSTEP_SIZE, busy_parallel, busy_cross));
 }
 
 pub fn move_parallel_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>, pos: f64) -> Result<()> {
-    let cmd = format!("lockstep 1 move abs {}", pos as u64);
+    let cmd = format!("lockstep 1 move abs {}", (pos / MICROSTEP_SIZE) as u64);
     let _ = zaber_conn.borrow_mut().command_reply((1, cmd))?.flag_ok()?;
     Ok(())
 }
 
 pub fn move_cross_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>, pos: f64) -> Result<()> {
-    let cmd = format!("move abs {}", pos as u64);
+    let cmd = format!("move abs {}", (pos / MICROSTEP_SIZE) as u64);
     let _ = zaber_conn.borrow_mut().command_reply((2, cmd))?.flag_ok()?;
     Ok(())
 }
