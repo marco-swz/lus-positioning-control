@@ -1,13 +1,21 @@
-use std::{sync::{Arc, RwLock}};
+use std::sync::{Arc, RwLock};
 
 use axum::{
-    extract::{ws::WebSocket, State, WebSocketUpgrade},
+    extract::{
+        ws::{Message, WebSocket},
+        State, WebSocketUpgrade,
+    },
     response::{Html, IntoResponse},
     routing::{get, post},
     Form, Json, Router,
 };
 use crossbeam_channel::Sender;
-use opcua::{server::{config::ServerConfig, state::ServerState}, sync};
+use futures::{SinkExt, StreamExt};
+use opcua::{
+    server::{config::ServerConfig, state::ServerState},
+    sync,
+};
+use serde_json;
 
 use crate::control::{Config, SharedState};
 
@@ -59,7 +67,6 @@ async fn handle_post_config(State(state): State<WebState>, Form(data): Form<Conf
     drop(config);
 }
 
-
 async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerConfig> {
     tracing::debug!("GET /opcua requested");
 
@@ -105,35 +112,65 @@ async fn handle_manual_init(
     ws.on_upgrade(move |socket| handle_manual(socket, state))
 }
 
-async fn handle_manual(mut socket: WebSocket, state: WebState) {
+async fn handle_manual(socket: WebSocket, state: WebState) {
+    let (mut sender, mut receiver) = socket.split();
 
-    while let Some(msg) = socket.recv().await {
-        let msg = if let Ok(msg) = msg {
-            msg
-        } else {
-            return; // client disconnected
-        };
-
-        let Ok(msg) = msg.to_text() else {
-            continue;
-        };
-
-        let Ok(voltage) = str::parse::<f64>(msg) else {
-            continue;
-        };
-
-        {
-            match state.voltage_manual.write() {
-                Err(e) => tracing::error!("Failed to aquire manual voltage lock: {e}"),
-                Ok(mut v) => *v = voltage,
+    let mut recv_task = tokio::spawn(async move {
+        while let Some(msg) = receiver.next().await {
+            let msg = if let Ok(msg) = msg {
+                msg
+            } else {
+                return; // client disconnected
             };
+
+            let Ok(msg) = msg.to_text() else {
+                continue;
+            };
+
+            let Ok(voltage) = str::parse::<f64>(msg) else {
+                continue;
+            };
+
+            {
+                match state.voltage_manual.write() {
+                    Err(e) => tracing::error!("Failed to aquire manual voltage lock: {e}"),
+                    Ok(mut v) => *v = voltage,
+                };
+            }
+        }
+    });
+
+    let mut send_task = tokio::spawn(async move {
+        loop {
+            let state = { state.zaber_state.read().unwrap().clone() };
+
+            let state_json = serde_json::to_string(&state).unwrap();
+            sender.send(Message::Text(state_json)).await.unwrap();
+
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+    });
+
+    // If any one of the tasks exit, abort the other.
+    tokio::select! {
+        rv_a = (&mut send_task) => {
+            match rv_a {
+                Ok(_) => (),
+                Err(a) => tracing::error!("Error sending messages {a:?}")
+            }
+            recv_task.abort();
+        },
+        rv_b = (&mut recv_task) => {
+            match rv_b {
+                Ok(_) => (),
+                Err(b) => tracing::error!("Error receiving messages {b:?}")
+            }
+            send_task.abort();
         }
     }
 }
 
-pub fn run_web_server(
-    state: WebState,
-) {
+pub fn run_web_server(state: WebState) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()

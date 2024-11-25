@@ -44,7 +44,7 @@ fn main() {
             voltage_max: 100.,
             serial_device: "/dev/ttyACM0".to_string(),
             opcua_config_path: "opcua_config.conf".into(),
-            backend: Backend::Manual,
+            backend: Backend::Ramp,
         })),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),

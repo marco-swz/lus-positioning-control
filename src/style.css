@@ -1,10 +1,42 @@
+:root {
+    --clr-accent: steelblue;
+}
+
+* {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+    font-size: 14px;
+}
+
+.danger {
+    --clr-accent: indianred;
+}
+
+.success {
+    --clr-accent: forestgreen;
+}
+
+input, select {
+    accent-color: var(--clr-accent);
+    border: 1px solid darkgrey;
+    border-radius: 4px;
+    padding: 3px 7px;
+    outline: none;
+}
+
 button {
-    background-color: white;
+    background-color: var(--clr-accent);
+    color: white;
     padding: 7px;
     border-radius: 4px;
-    border: 1px solid grey;
+    border: 0;
     outline: none;
-    margin-top: 15px;
+    margin-top: 20px;
+    width: 75px;
+    font-weight: 500;
+}
+
+button:hover {
+    background-color: hsl(from var(--clr-accent) h s calc(l + 10));
 }
 
 select {
@@ -12,10 +44,6 @@ select {
     height: 25px;
     border: 1px solid grey;
     outline: none;
-}
-
-button:hover {
-    background-color: whitesmoke;
 }
 
 #main {
@@ -26,13 +54,10 @@ button:hover {
 }
 
 .content {
-    width: 400px;
+    width: 500px;
     display: none;
-    border: 1px solid grey;
-    padding: 10px;
-    box-shadow: rgba(0, 0, 0, 0.25) 0px 14px 28px, rgba(0, 0, 0, 0.22) 0px 10px 10px;
-    border-radius: 4px;
-    border-top-left-radius: 0;
+    padding: 20px 10px;
+    border-top: 1px solid darkgrey;
 }
 
 #control input {
@@ -42,7 +67,7 @@ button:hover {
 .grid {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 5px 20px;
+    gap: 7px 20px;
 }
 
 .visible {
@@ -58,24 +83,25 @@ form {
 }
 
 .tab {
-    border: 1px solid grey;
-    color: grey;
-    background-color: whitesmoke;
-    padding: 5px;
-    margin-bottom: -1px;
+    padding: 10px;
     cursor: pointer;
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
 }
 
 .tab.active {
-    border-bottom-color: transparent;
+    border-bottom: 3px solid steelblue;
     color: black;
     background-color: white;
 }
 
 #cont-slider-pos {
     display: flex;
+    flex-direction: column;
+    margin-bottom: 20px;
+
+    & #cont-min-max {
+        display: flex;
+        justify-content: space-between;
+    }
 
     & input[type=number] {
         width: 75px;
@@ -85,4 +111,3 @@ form {
         width: 100%;
     }
 }
-

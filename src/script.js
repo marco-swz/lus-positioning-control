@@ -74,21 +74,24 @@ function loadConfig() {
 function loadOpcua() {
     fetch('/opcua')
         .then(x => x.json())
-        .then(x => {
-            let $form = document.querySelector('#form-opcua > div');
-            Object.entries(x)
-                .forEach(function([key, val]) {
-                    let $label = document.createElement('label');
-                    $label.innerHTML = key;
-
-                    let $input = document.createElement('input');
-                    $input.name = key;
-                    $input.value = val;
-
-                    $form.append($label);
-                    $form.append($input);
-                })
-        });
+        .then(x => Object.entries(x)
+            .forEach(function([key, val]) {
+                if (typeof val === 'object') {
+                    let $fieldset = document.querySelector(`fieldset#${key}`);
+                    if ($fieldset == null) {
+                        return;
+                    }
+                    for (const [k, v] of Object.entries(val)) {
+                        let $inp = document.querySelector(`#${key} [name="${k}"]`);
+                        if ($inp != null) {
+                            $inp.value = v;
+                        }
+                    }
+                } else {
+                    document.querySelector(`[name=${key}]`).value = val;
+                }
+            })
+        );
 }
 
 function connectWebsocketManual() {
@@ -96,7 +99,15 @@ function connectWebsocketManual() {
 
     // Listen for messages
     gSocket.addEventListener("message", (event) => {
-        console.log("Message from server ", event.data);
+        Object.entries(JSON.parse(event.data))
+            .forEach(function([key, val]) {
+                if (key === "timestamp") {
+                    let [date, time] = val.split('T');
+                    time = time.split('.')[0];
+                    val = date + ' ' + time;
+                }
+                document.querySelector('#' + key).value = val;
+            });
     });
 
 }

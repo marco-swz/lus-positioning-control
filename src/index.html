@@ -24,15 +24,16 @@
             <span>Last Change</span>
             <input id="timestamp" disabled />
         </div>
-        <button id="btn-refresh" onclick="handleClickRefresh()">Refresh</button>
-        <button id="btn-start" onclick="handleClickStart()">Start</button>
-        <button id="btn-stop" onclick="handleClickStop()">Stop</button>
+        <button id="btn-start" class="success" onclick="handleClickStart()">Start</button>
+        <button id="btn-stop" class="danger" onclick="handleClickStop()">Stop</button>
     </div>
     <div id="Manual" class="content">
         <div id="cont-slider-pos">
-            <input id="inp-pos-min" type="number" value="0" onchange="document.querySelector('#inp-pos').min = this.value"/>
+            <div id="cont-min-max">
+                <input id="inp-pos-min" type="number" value="0" onchange="document.querySelector('#inp-pos').min = this.value"/>
+                <input id="inp-pos-max" type="number" value="100" onchange="document.querySelector('#inp-pos').max = this.value"/>
+            </div>
             <input id="inp-pos" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos.bind(this)()" />
-            <input id="inp-pos-max" type="number" value="100" onchange="document.querySelector('#inp-pos').max = this.value"/>
         </div>
         <div class="grid">
             <label for="inp-pos-target">Target Position</label>
@@ -68,7 +69,74 @@
     </div>
     <div id="opcua" class="content">
         <form id="form-opcua" action="/opcua" method="post">
-            <div class="grid">
+            <div>
+                <div class="grid">
+                    <label>Application Name</label>
+                    <input name="application_name" value="" required />
+                    <label>Application URI</label>
+                    <input name="application_uri" value="" required />
+                    <label>Product URI</label>
+                    <input name="product_uri" value="" required />
+                    <label>Create Sample KeypairI</label>
+                    <select name="create_sample_keypair">
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                    </select>
+                    <label>Certificate Path</label>
+                    <input name="certificate_path" value="" required />
+                    <label>Private Key Path</label>
+                    <input name="private_key_path" value="" required />
+                    <label>PKI Dir.</label>
+                    <input name="pki_dir" value="" required />
+                    <label>Discovery Server URL</label>
+                    <input name="discovery_server_url" value="" required />
+                    <label>Locale IDs</label>
+                    <input name="locale_ids" value="" required />
+                    <label>Discovery URLs</label>
+                    <input name="discovery_urls" value="" required />
+                    <label>Default Endpoint</label>
+                    <input name="default_endpoint" value="" required />
+                </div>
+                <fieldset id="tcp_config" class="grid">
+                    <legend>TCP Config</legend>
+                    <label>Hello Timeout</label>
+                    <input name"hello_timeout" value="" required />
+                    <label>Host</label>
+                    <input name"host" value="" required />
+                    <label>Port</label>
+                    <input name"port" value="" required />
+                </fieldset>
+                <fieldset id="certificate_validation" class="grid">
+                    <legend>Certificate Validation</legend>
+                    <label>Trust Client Certs</label>
+                    <select name="trust_client_certs">
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                    </select>
+                    <label>Check Time</label>
+                    <select name="check_time">
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                    </select>
+                </fieldset>
+                <fieldset id="performance" class="grid">
+                    <legend>Performance</legend>
+                    <label>Single Threaded Executor</label>
+                    <select name="single_threaded_executor">
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                    </select>
+                    <label>Check Time</label>
+                    <select name="check_time">
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                    </select>
+                </fieldset>
+                <fieldset id="endpoints" class="grid">
+                    <legend>Endpoints</legend>
+                    <label>Endpoint</label>
+                    <input value="" required />
+                </fieldset>
             </div>
             <button type="button" onclick="handleClickSaveOpcua()">Save</button>
         </form>
