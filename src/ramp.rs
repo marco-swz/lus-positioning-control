@@ -1,6 +1,6 @@
 use std::{borrow::BorrowMut, cell::RefCell, rc::Rc};
 
-use crate::control::{run, ExecState};
+use crate::{control::run, utils::ExecState};
 use anyhow::Result;
 
 pub fn init_ramp(state: &mut ExecState) -> Result<()> {
@@ -15,7 +15,7 @@ pub fn init_ramp(state: &mut ExecState) -> Result<()> {
 }
 
 fn get_voltage_ramp(mut counter: Rc<RefCell<f64>>) -> Result<f64> {
-    let c = counter.borrow_mut(); 
+    let c = counter.borrow_mut();
     let mut f: f64 = c.take() + 1.;
     if f > 100. {
         f = 0.;
@@ -26,20 +26,20 @@ fn get_voltage_ramp(mut counter: Rc<RefCell<f64>>) -> Result<f64> {
 }
 
 fn get_pos_ramp(mut counter: Rc<RefCell<(f64, f64)>>) -> Result<(f64, f64, bool, bool)> {
-    let c = counter.borrow_mut(); 
+    let c = counter.borrow_mut();
     let f: (f64, f64) = c.take();
     return Ok((f.0, f.1, false, false));
 }
 
 fn move_parallel_ramp(mut counter: Rc<RefCell<(f64, f64)>>, pos: f64) -> Result<()> {
-    let c = counter.borrow_mut(); 
+    let c = counter.borrow_mut();
     let f: (f64, f64) = c.take();
     c.replace((pos, f.1));
     return Ok(());
 }
 
 fn move_cross_ramp(mut counter: Rc<RefCell<(f64, f64)>>, pos: f64) -> Result<()> {
-    let c = counter.borrow_mut(); 
+    let c = counter.borrow_mut();
     let f: (f64, f64) = c.take();
     c.replace((f.0, pos));
     return Ok(());

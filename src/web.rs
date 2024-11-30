@@ -1,5 +1,10 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    io::Write,
+    path::Path,
+    sync::{Arc, RwLock},
+};
 
+use anyhow::anyhow;
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -12,12 +17,13 @@ use axum::{
 use crossbeam_channel::Sender;
 use futures::{SinkExt, StreamExt};
 use opcua::{
+    core::config::Config,
     server::{config::ServerConfig, state::ServerState},
     sync,
 };
 use serde_json;
 
-use crate::control::{Config, SharedState};
+use crate::utils::{self, SharedState};
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("script.js");
@@ -29,7 +35,7 @@ pub struct WebState {
     pub tx_start_control: Sender<()>,
     pub tx_stop_control: Sender<()>,
     pub voltage_manual: Arc<RwLock<f64>>,
-    pub config: Arc<RwLock<Config>>,
+    pub config: Arc<RwLock<utils::Config>>,
     pub opcua_state: Arc<sync::RwLock<ServerState>>,
 }
 
@@ -58,13 +64,45 @@ async fn handle_refresh(State(state): State<WebState>) -> Json<SharedState> {
     return Json(state.zaber_state.read().unwrap().clone());
 }
 
-async fn handle_post_config(State(state): State<WebState>, Form(data): Form<Config>) {
+async fn handle_post_config(State(state): State<WebState>, Form(config_new): Form<utils::Config>) {
     tracing::debug!("POST /config requested");
     let _ = state.tx_stop_control.try_send(());
 
+    let save_result = match toml::to_string_pretty(&config_new) {
+        Ok(config) => {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open("config.toml")
+            {
+                Ok(mut file) => match file.write_all(config.as_bytes()) {
+                    Ok(_) => {
+                        tracing::debug!("`config.toml` successfully written");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("error writing to `config.toml: {e}");
+                        Err(anyhow!("error writing to `config.toml: {e}"))
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("error opening `config.toml: {e}");
+                    Err(anyhow!("error opening `config.toml: {e}"))
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("error serializing new config: {e}");
+            Err(anyhow!("error serializing new config: {e}"))
+        }
+    };
+
     let mut config = state.config.write().unwrap();
-    *config = data;
+    *config = config_new;
     drop(config);
+
+    save_result.unwrap();
 }
 
 async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerConfig> {
@@ -75,16 +113,28 @@ async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerConfig> {
     return Json(opcua.config.read().clone());
 }
 
-async fn handle_post_opcua(State(state): State<WebState>, Form(data): Form<Config>) {
+async fn handle_post_opcua(State(state): State<WebState>, Form(new_config): Form<ServerConfig>) {
     tracing::debug!("POST /opcua requested");
+    if !new_config.is_valid() {
+        tracing::error!("new opcua config is invalid");
+        Err(anyhow!("new opcua config is invalid")).unwrap()
+    }
+
+    let config_path = {
+        state.config.read().unwrap().opcua_config_path.clone()
+    };
+
+    match new_config.save(Path::new(&config_path)) {
+        Ok(_) => tracing::debug!("successfully saved new opcua config"),
+        Err(_) => {
+            tracing::error!("failed to write to opcua config")
+        }
+    }
 
     let mut opcua = state.opcua_state.write();
     opcua.abort();
-
-    //TODO(marco): Set new state
-
+    tracing::debug!("opcua server aborted");
     drop(opcua);
-    dbg!("post opcua end");
 }
 
 async fn handle_post_start(State(state): State<WebState>) {
@@ -97,7 +147,7 @@ async fn handle_post_stop(State(state): State<WebState>) {
     let _ = state.tx_stop_control.try_send(());
 }
 
-async fn handle_get_config(State(state): State<WebState>) -> Json<Config> {
+async fn handle_get_config(State(state): State<WebState>) -> Json<utils::Config> {
     tracing::debug!("GET config requested");
     let config = { state.config.read().unwrap().clone() };
 

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use opcua::server::state::ServerState;
 use opcua::{server::prelude::*, sync::RwLock};
 
-use crate::control::StateChannel;
+use crate::utils::StateChannel;
 
 fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
     let address_space = server.address_space();

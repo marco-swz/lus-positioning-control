@@ -1,19 +1,46 @@
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use anyhow::Result;
 use chrono::Local;
 use crossbeam_channel::bounded;
+use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 mod control;
-use control::{init, Backend, Config, ControlStatus, ExecState, SharedState};
+use control::init;
 
-mod zaber;
 mod ramp;
+mod zaber;
 
 mod opcua;
 use opcua::run_opcua;
 
+mod utils;
+use utils::{Backend, Config, ControlStatus, ExecState, SharedState};
+
 mod web;
 use web::{run_web_server, WebState};
+
+fn read_config() -> Result<Config> {
+    match std::fs::read_to_string("config.toml") {
+        Ok(config) => {
+            tracing::debug!("`config.toml` successfully read");
+
+            match toml::from_str(&config) {
+                Ok(config) => {
+                    tracing::debug!("`config.toml` successfully parsed");
+                    Ok(config)
+                }
+                Err(e) => {
+                    tracing::error!("error parsing `config.toml: {}", e);
+                    Err(e.into())
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("error loading `config.toml: {}", e);
+            Err(e.into())
+        }
+    }
+}
 
 fn main() {
     tracing_subscriber::fmt::init();
@@ -37,7 +64,7 @@ fn main() {
 
     let mut state = ExecState {
         shared: shared_state.clone(),
-        config: Arc::new(RwLock::new(Config {
+        config: Arc::new(RwLock::new(read_config().unwrap_or(Config {
             cycle_time: Duration::from_millis(1000),
             restart_timeout: Duration::from_secs(10),
             voltage_min: 5.,
@@ -45,12 +72,11 @@ fn main() {
             serial_device: "/dev/ttyACM0".to_string(),
             opcua_config_path: "opcua_config.conf".into(),
             backend: Backend::Ramp,
-        })),
+        }))),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
         voltage_manual: Arc::clone(&voltage_manual),
     };
-
 
     let queue_clone = Arc::clone(&state_channel);
     let opcua_state = {
@@ -58,14 +84,13 @@ fn main() {
         run_opcua(queue_clone, config_path)
     };
 
-    let web_state = WebState{
+    let web_state = WebState {
         zaber_state: state_channel,
         tx_stop_control: tx_stop.clone(),
         tx_start_control: tx_start.clone(),
         config: state.config.clone(),
         opcua_state,
         voltage_manual,
-
     };
     std::thread::spawn(|| run_web_server(web_state));
 
@@ -75,18 +100,15 @@ fn main() {
 
     let mut stopped = true;
     loop {
-        if let Ok(_) = rx_stop.try_recv() {
-            stopped = true;
-        }
-
         if stopped {
             state.shared.control_state = ControlStatus::Stopped;
             {
                 let mut out = state.out_channel.write().unwrap();
                 *out = state.shared.clone();
             }
-            tracing::debug!("control stopped - wait for start");
+            tracing::debug!("control waiting for start");
             let _ = rx_start.recv();
+            tracing::debug!("start signal received");
         }
 
         tracing::debug!("trying to init control");
@@ -103,12 +125,15 @@ fn main() {
                     *out = state.shared.clone();
                 }
 
-                let restart_timeout = {
-                    state.config.read().unwrap().restart_timeout
-                };
-                std::thread::sleep(restart_timeout);
                 stopped = false;
             }
+        }
+
+        let restart_timeout = { state.config.read().unwrap().restart_timeout };
+        tracing::debug!("waiting for stop signal");
+        if let Ok(_) = rx_stop.recv_timeout(restart_timeout) {
+            tracing::debug!("stop signal received");
+            stopped = true;
         }
     }
 }

@@ -1,6 +1,14 @@
-use std::{cell::RefCell, rc::Rc, sync::{Arc, RwLock}};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, RwLock},
+};
 
-use anyhow::{Result, anyhow};
+use crate::{
+    control::run,
+    utils::{self, ExecState},
+};
+use anyhow::{anyhow, Result};
 use zproto::{
     ascii::{
         response::{check, Status},
@@ -8,7 +16,6 @@ use zproto::{
     },
     backend::Backend,
 };
-use crate::control::{self, run, ExecState};
 
 pub const MICROSTEP_SIZE: f64 = 0.49609375; //µm
 pub const MAX_POS: usize = 201574; // microsteps
@@ -23,7 +30,13 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 
     let mut zaber_conn = match Port::open_serial(&serial_device) {
         Ok(zaber_conn) => zaber_conn,
-        Err(e) => return Err(anyhow!("Failed to open Zaber serial port '{}': {}", serial_device, e)),
+        Err(e) => {
+            return Err(anyhow!(
+                "Failed to open Zaber serial port '{}': {}",
+                serial_device,
+                e
+            ))
+        }
     };
 
     zaber_conn.command_reply_n("system restore", 2, check::unchecked())?;
@@ -35,7 +48,9 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 
     zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
 
-    zaber_conn.command_reply((1, "lockstep 1 setup enable 1 2"))?.flag_ok()?;
+    zaber_conn
+        .command_reply((1, "lockstep 1 setup enable 1 2"))?
+        .flag_ok()?;
 
     let zaber_conn = Rc::new(RefCell::new(zaber_conn));
 
@@ -44,16 +59,17 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
     let move_cross = |pos| move_cross_zaber(Rc::clone(&zaber_conn), pos);
 
     match backend {
-        control::Backend::Manual => {
+        utils::Backend::Manual => {
             let voltage_shared = Arc::clone(&state.voltage_manual);
-            let voltage  = Rc::new(RefCell::new(0.));
-            let get_voltage = move || get_voltage_manual(Rc::clone(&voltage), Arc::clone(&voltage_shared));
+            let voltage = Rc::new(RefCell::new(0.));
+            let get_voltage =
+                move || get_voltage_manual(Rc::clone(&voltage), Arc::clone(&voltage_shared));
             return run(state, get_voltage, get_pos, move_parallel, move_cross);
-        },
+        }
         _ => {
             let get_voltage = || get_voltage_zaber(Rc::clone(&zaber_conn));
             return run(state, get_voltage, get_pos, move_parallel, move_cross);
-        },
+        }
     };
 }
 
@@ -64,7 +80,7 @@ pub fn get_voltage_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> R
 }
 
 fn get_voltage_manual(voltage: Rc<RefCell<f64>>, voltage_shared: Arc<RwLock<f64>>) -> Result<f64> {
-    let ref mut voltage = *voltage.borrow_mut(); 
+    let ref mut voltage = *voltage.borrow_mut();
     let Ok(shared) = voltage_shared.try_read() else {
         return Ok(*voltage);
     };
@@ -73,7 +89,9 @@ fn get_voltage_manual(voltage: Rc<RefCell<f64>>, voltage_shared: Arc<RwLock<f64>
     return Ok(*shared);
 }
 
-pub fn get_pos_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Result<(f64, f64, bool, bool)> {
+pub fn get_pos_zaber<T: Backend>(
+    zaber_conn: Rc<RefCell<ZaberConn<T>>>,
+) -> Result<(f64, f64, bool, bool)> {
     let mut pos_parallel = 0.;
     let mut busy_parallel = false;
     let mut pos_cross = 0.;
@@ -110,10 +128,18 @@ pub fn get_pos_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Resul
             }
         }
     }
-    return Ok((pos_parallel * MICROSTEP_SIZE, pos_cross * MICROSTEP_SIZE, busy_parallel, busy_cross));
+    return Ok((
+        pos_parallel * MICROSTEP_SIZE,
+        pos_cross * MICROSTEP_SIZE,
+        busy_parallel,
+        busy_cross,
+    ));
 }
 
-pub fn move_parallel_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>, pos: f64) -> Result<()> {
+pub fn move_parallel_zaber<T: Backend>(
+    zaber_conn: Rc<RefCell<ZaberConn<T>>>,
+    pos: f64,
+) -> Result<()> {
     let cmd = format!("lockstep 1 move abs {}", (pos / MICROSTEP_SIZE) as u64);
     let _ = zaber_conn.borrow_mut().command_reply((1, cmd))?.flag_ok()?;
     Ok(())
