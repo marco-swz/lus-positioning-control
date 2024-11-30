@@ -41,8 +41,8 @@ button:hover {
 
 select {
     background-color: white;
-    height: 25px;
-    border: 1px solid grey;
+    height: 28px;
+    border: 1px solid darkgrey;
     outline: none;
 }
 
@@ -93,6 +93,21 @@ form {
     background-color: white;
 }
 
+#ui-status {
+    float: right;
+    margin-top: 11px;
+    font-size: 12px;
+    font-style: italic;
+    border: 0;
+    background-color: white;
+    width: 90px;
+}
+
+#ui-status[value="disconnected"] {
+    color: red;
+}
+
+
 #cont-slider-pos {
     display: flex;
     flex-direction: column;
@@ -110,4 +125,10 @@ form {
     & input[type=range] {
         width: 100%;
     }
+}
+
+#form-opcua fieldset {
+    margin: 5px 0;
+    border: 1px solid darkgrey;
+    border-radius: 6px;
 }

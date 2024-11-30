@@ -38,7 +38,14 @@ function handleClickSaveConfig() {
             "Content-Type": "application/x-www-form-urlencoded",
         },
     })
-        .then(() => loadConfig());
+        .then(x => {
+            loadConfig();
+            if (x.ok) {
+                alert('New config loaded');
+            } else {
+                alert('Error while loading new config');
+            }
+        })
 }
 
 function handleClickStart() {
@@ -57,7 +64,6 @@ function handleClickStop() {
 
 function handleMouseupSliderPos() {
     console.assert(gSocket != null, 'Websocket not initialized');
-    console.log(this.value);
     gSocket.send(this.value);
 }
 
@@ -96,10 +102,14 @@ function loadOpcua() {
 
 function connectWebsocketManual() {
     gSocket = new WebSocket('ws://localhost:8080/ws');
+    let $inpActual = document.querySelector('#inp-pos-actual');
+    let $btnStart = document.querySelector('#btn-start');
+    let $btnStop = document.querySelector('#btn-stop');
 
     // Listen for messages
     gSocket.addEventListener("message", (event) => {
-        Object.entries(JSON.parse(event.data))
+        const data = JSON.parse(event.data);
+        Object.entries(data)
             .forEach(function([key, val]) {
                 if (key === "timestamp") {
                     let [date, time] = val.split('T');
@@ -108,6 +118,25 @@ function connectWebsocketManual() {
                 }
                 document.querySelector('#' + key).value = val;
             });
+        document.querySelector('#inp-pos-actual').value = data['position_parallel'];
+
+        if (data['control_state'] !== 'Stopped') {
+            $btnStart.hidden = true;
+            $btnStop.hidden = false;
+        } else {
+            $btnStart.hidden = false;
+            $btnStop.hidden = true;
+        }
+    });
+
+    gSocket.addEventListener('open', () => {
+        document.querySelector('#ui-status').setAttribute('value', 'connected');
+        document.querySelector('#ui-status').value = 'connected';
+    });
+
+    gSocket.addEventListener('close', () => {
+        document.querySelector('#ui-status').setAttribute('value', 'disconnected');
+        document.querySelector('#ui-status').value = 'disconnected';
     });
 
 }

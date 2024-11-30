@@ -4,4 +4,4 @@ voltage_min = 5.0
 voltage_max = 100.0
 serial_device = "/dev/ttyACM0"
 opcua_config_path = "opcua_config.conf"
-backend = "Manual"
+backend = "Ramp"

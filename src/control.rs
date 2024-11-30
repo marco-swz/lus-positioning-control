@@ -9,6 +9,12 @@ pub fn init(state: &mut ExecState) -> Result<()> {
         state.config.read().unwrap().backend.clone()
     };
 
+    state.shared.error = None;
+    if let Ok(mut out) = state.out_channel.try_write() {
+        *out = state.shared.clone();
+        drop(out);
+    }
+
     tracing::debug!("Init control with backend {:?}", &backend);
     return match backend {
         Backend::Zaber | Backend::Manual => init_zaber(state),

@@ -1,4 +1,5 @@
 <div id="main">
+    <input id="ui-status" value="disconnected" disabled/>
     <div id="tabs">
         <div id="tab-control" class="tab active" onclick="handleClickTab('control')">Control</div>
         <div id="tab-manual" class="tab" onclick="handleClickTab('manual')">Manual</div>
@@ -25,7 +26,7 @@
             <input id="timestamp" disabled />
         </div>
         <button id="btn-start" class="success" onclick="handleClickStart()">Start</button>
-        <button id="btn-stop" class="danger" onclick="handleClickStop()">Stop</button>
+        <button id="btn-stop" class="danger" onclick="handleClickStop()" hidden>Stop</button>
     </div>
     <div id="Manual" class="content">
         <div id="cont-slider-pos">
@@ -100,11 +101,11 @@
                 <fieldset id="tcp_config" class="grid">
                     <legend>TCP Config</legend>
                     <label>Hello Timeout</label>
-                    <input name"hello_timeout" value="" required />
+                    <input name="hello_timeout" value="" required />
                     <label>Host</label>
-                    <input name"host" value="" required />
+                    <input name="host" value="" required />
                     <label>Port</label>
-                    <input name"port" value="" required />
+                    <input name="port" value="" required />
                 </fieldset>
                 <fieldset id="certificate_validation" class="grid">
                     <legend>Certificate Validation</legend>
