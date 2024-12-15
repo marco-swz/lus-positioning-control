@@ -2,7 +2,8 @@ use anyhow::Result;
 use chrono::Local;
 use crate::utils::{Backend, ControlStatus, ExecState};
 
-use crate::{ramp::init_ramp, zaber::{init_zaber, MAX_POS, MICROSTEP_SIZE}};
+use crate::zaber::steps_to_mm;
+use crate::{ramp::init_ramp, zaber::{init_zaber, MAX_POS}};
 
 pub fn init(state: &mut ExecState) -> Result<()> {
     let backend = {
@@ -43,7 +44,7 @@ pub fn run(
         tracing::debug!("Voltage reading {voltage_gleeble}");
         state.shared.voltage_gleeble = voltage_gleeble;
 
-        let target_position_parallel = (MAX_POS as f64 * MICROSTEP_SIZE) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
+        let target_position_parallel = steps_to_mm(MAX_POS) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
 
         let (pos_parallel, pos_cross, busy_parallel, busy_cross) = get_pos()?;
         state.shared.position_parallel = pos_parallel;

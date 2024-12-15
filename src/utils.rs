@@ -27,6 +27,13 @@ pub struct Config {
     pub serial_device: String,
     pub opcua_config_path: PathBuf,
     pub backend: Backend,
+    pub limit_max_parallel: f64,
+    pub limit_min_parallel: f64,
+    pub maxspeed_parallel: f64,
+    pub offset_parallel: f64,
+    pub limit_max_cross: f64,
+    pub limit_min_cross: f64,
+    pub maxspeed_cross: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

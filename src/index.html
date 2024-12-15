@@ -1,5 +1,5 @@
 <div id="main">
-    <input id="ui-status" value="disconnected" disabled/>
+    <input id="ui-status" value="disconnected" disabled />
     <div id="tabs">
         <div id="tab-control" class="tab active" onclick="handleClickTab('control')">Control</div>
         <div id="tab-manual" class="tab" onclick="handleClickTab('manual')">Manual</div>
@@ -29,19 +29,42 @@
         <button id="btn-stop" class="danger" onclick="handleClickStop()" hidden>Stop</button>
     </div>
     <div id="Manual" class="content">
-        <div id="cont-slider-pos">
-            <div id="cont-min-max">
-                <input id="inp-pos-min" type="number" value="0" onchange="document.querySelector('#inp-pos').min = this.value"/>
-                <input id="inp-pos-max" type="number" value="100" onchange="document.querySelector('#inp-pos').max = this.value"/>
+        <fieldset>
+            <legend>Parallel Axis</legend>
+            <div class="grid">
+                <label for="inp-pos-target-parallel">Target Position [mm]</label>
+                <input id="inp-pos-target-parallel" disabled />
+                <label for="inp-pos-actual-parallel">Actual Position [mm]</label>
+                <input id="inp-pos-actual-parallel" disabled />
             </div>
-            <input id="inp-pos" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos.bind(this)()" />
-        </div>
-        <div class="grid">
-            <label for="inp-pos-target">Target Position</label>
-            <input id="inp-pos-target" disabled/>
-            <label for="inp-pos-actual">Actual Position</label>
-            <input id="inp-pos-actual" disabled/>
-        </div>
+            <div class="cont-slider-pos">
+                <div class="cont-min-max">
+                    <input id="inp-pos-min-parallel" type="number" value="0"
+                        onchange="document.querySelector('#inp-pos-parallel').min = this.value" />
+                    <input id="inp-pos-max-parallel" type="number" value="100"
+                        onchange="document.querySelector('#inp-pos-parallel').max = this.value" />
+                </div>
+                <input id="inp-pos-parallel" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos()" />
+            </div>
+        </fieldset>
+        <fieldset>
+            <legend>Cross Axis</legend>
+            <div class="grid">
+                <label for="inp-pos-target-cross">Target Position [mm]</label>
+                <input id="inp-pos-target-cross" disabled />
+                <label for="inp-pos-actual-cross">Actual Position [mm]</label>
+                <input id="inp-pos-actual-cross" disabled />
+            </div>
+            <div class="cont-slider-pos">
+                <div class="cont-min-max">
+                    <input id="inp-pos-min-cross" type="number" value="0"
+                        onchange="document.querySelector('#inp-pos-cross').min = this.value" />
+                    <input id="inp-pos-max-cross" type="number" value="100"
+                        onchange="document.querySelector('#inp-pos-cross').max = this.value" />
+                </div>
+                <input id="inp-pos-cross" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos()" />
+            </div>
+        </fieldset>
     </div>
     <div id="config" class="content">
         <form id="form-config" action="/config" method="post">
@@ -50,13 +73,9 @@
                 <input name="serial_device" value="" required />
                 <label>Refresh Rate [ms]</label>
                 <input name="cycle_time" value="" required />
-                <label>Min. Voltage</label>
-                <input name="voltage_min" value="" required />
-                <label>Max. Voltage</label>
-                <input name="voltage_max" value="" required />
-                <label>Restart Timeout</label>
+                <label>Restart Timeout [ms]</label>
                 <input name="restart_timeout" value="" required />
-                <label>OPCU-UA Config Path</label>
+                <label>OPC-UA Config Path</label>
                 <input name="opcua_config_path" value="" required />
                 <label>Backend</label>
                 <select name="backend">
@@ -65,6 +84,30 @@
                     <option value="Ramp">Ramp</option>
                 </select>
             </div>
+            <fieldset class="grid">
+                <legend>Parallel Axis</legend>
+                <label>Min. Voltage [V]</label>
+                <input name="voltage_min" value="" required />
+                <label>Max. Voltage [V]</label>
+                <input name="voltage_max" value="" required />
+                <label>Min. Limit [mm]</label>
+                <input name="limit_min_parallel" value="" required />
+                <label>Max. Limit [mm]</label>
+                <input name="limit_max_parallel" value="" required />
+                <label>Max. Speed [mm/s]</label>
+                <input name="maxspeed_parallel" value="" required />
+                <label>Axis Offset [mm]</label>
+                <input name="offset_parallel" value="" required />
+            </fieldset>
+            <fieldset class="grid">
+                <legend>Cross Axis</legend>
+                <label>Min. Limit [mm]</label>
+                <input name="limit_min_cross" value="" required />
+                <label>Max. Limit [mm]</label>
+                <input name="limit_max_cross" value="" required />
+                <label>Max. Speed [mm/s]</label>
+                <input name="maxspeed_cross" value="" required />
+            </fieldset>
             <button type="button" onclick="handleClickSaveConfig()">Save</button>
         </form>
     </div>

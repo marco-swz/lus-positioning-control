@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -120,9 +120,7 @@ async fn handle_post_opcua(State(state): State<WebState>, Form(new_config): Form
         Err(anyhow!("new opcua config is invalid")).unwrap()
     }
 
-    let config_path = {
-        state.config.read().unwrap().opcua_config_path.clone()
-    };
+    let config_path = { state.config.read().unwrap().opcua_config_path.clone() };
 
     match new_config.save(Path::new(&config_path)) {
         Ok(_) => tracing::debug!("successfully saved new opcua config"),
@@ -162,6 +160,22 @@ async fn handle_manual_init(
     ws.on_upgrade(move |socket| handle_manual(socket, state))
 }
 
+fn parse_message(msg: Message) -> Result<(f64, f64)> {
+    let msg = msg.to_text()?;
+    let mut msg = msg.split_whitespace();
+
+    let val_coax = str::parse::<f64>(
+        msg.next()
+            .ok_or(anyhow!("Missing value"))?
+    )?;
+    let val_cross = str::parse::<f64>(
+        msg.next()
+            .ok_or(anyhow!("Missing value"))?
+    )?;
+
+    return Ok((val_coax, val_cross));
+}
+
 async fn handle_manual(socket: WebSocket, state: WebState) {
     let (mut sender, mut receiver) = socket.split();
 
@@ -173,18 +187,19 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
                 return; // client disconnected
             };
 
-            let Ok(msg) = msg.to_text() else {
-                continue;
-            };
 
-            let Ok(voltage) = str::parse::<f64>(msg) else {
-                continue;
+            let (val_coax, val_cross) = match parse_message(msg) {
+                Ok(val) => val,
+                Err(e) => {
+                    tracing::error!("Error parsing message: {e}");
+                    continue
+                }
             };
 
             {
                 match state.voltage_manual.write() {
                     Err(e) => tracing::error!("Failed to aquire manual voltage lock: {e}"),
-                    Ok(mut v) => *v = voltage,
+                    Ok(mut v) => *v = val_coax,
                 };
             }
         }

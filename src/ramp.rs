@@ -16,7 +16,7 @@ pub fn init_ramp(state: &mut ExecState) -> Result<()> {
 
 fn get_voltage_ramp(mut counter: Rc<RefCell<f64>>) -> Result<f64> {
     let c = counter.borrow_mut();
-    let mut f: f64 = c.take() + 1.;
+    let mut f: f64 = c.take() + 10.;
     if f > 100. {
         f = 0.;
     }

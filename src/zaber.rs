@@ -18,22 +18,24 @@ use zproto::{
 };
 
 pub const MICROSTEP_SIZE: f64 = 0.49609375; //µm
-pub const MAX_POS: usize = 201574; // microsteps
+pub const VELOCITY_FACTOR: f64 = 1.6384;
+pub const MAX_POS: u64 = 201574; // microsteps
+pub const MAX_SPEED: u64 = 153600; // microsteps/sec
 
 type ZaberConn<T> = Port<'static, T>;
 
 pub fn init_zaber(state: &mut ExecState) -> Result<()> {
-    let (serial_device, backend) = {
+    let config = {
         let s = state.config.read().unwrap();
-        (s.serial_device.clone(), s.backend.clone())
+        s.clone()
     };
 
-    let mut zaber_conn = match Port::open_serial(&serial_device) {
+    let mut zaber_conn = match Port::open_serial(&config.serial_device) {
         Ok(zaber_conn) => zaber_conn,
         Err(e) => {
             return Err(anyhow!(
                 "Failed to open Zaber serial port '{}': {}",
-                serial_device,
+                config.serial_device,
                 e
             ))
         }
@@ -48,6 +50,37 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 
     zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
 
+    if config.offset_parallel > 0. {
+        zaber_conn
+            .command_reply((1, format!("1 move rel {}", mm_to_steps(config.offset_parallel))))?
+            .flag_ok()?;
+    } else if config.offset_parallel < 0. {
+        zaber_conn
+            .command_reply((1, format!("1 move rel {}", mm_to_steps(config.offset_parallel.abs()))))?
+            .flag_ok()?;
+    }
+    zaber_conn.poll_until_idle(1, check::flag_ok())?;
+
+    zaber_conn
+        .command_reply((1, format!("set maxspeed {}", mm_per_sec_to_steps_per_sec(config.maxspeed_parallel))))?
+        .flag_ok()?;
+    zaber_conn
+        .command_reply((1, format!("set limit.max {}", mm_to_steps(config.limit_max_parallel))))?
+        .flag_ok()?;
+    zaber_conn
+        .command_reply((1, format!("set limit.min {}", mm_to_steps(config.limit_min_parallel))))?
+        .flag_ok()?;
+
+    zaber_conn
+        .command_reply((2, format!("set maxspeed {}", mm_per_sec_to_steps_per_sec(config.maxspeed_cross))))?
+        .flag_ok()?;
+    zaber_conn
+        .command_reply((2, format!("set limit.max {}", mm_to_steps(config.limit_max_cross))))?
+        .flag_ok()?;
+    zaber_conn
+        .command_reply((2, format!("set limit.min {}", mm_to_steps(config.limit_min_cross))))?
+        .flag_ok()?;
+
     zaber_conn
         .command_reply((1, "lockstep 1 setup enable 1 2"))?
         .flag_ok()?;
@@ -58,7 +91,7 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
     let move_parallel = |pos| move_parallel_zaber(Rc::clone(&zaber_conn), pos);
     let move_cross = |pos| move_cross_zaber(Rc::clone(&zaber_conn), pos);
 
-    match backend {
+    match config.backend {
         utils::Backend::Manual => {
             let voltage_shared = Arc::clone(&state.voltage_manual);
             let voltage = Rc::new(RefCell::new(0.));
@@ -92,9 +125,9 @@ fn get_voltage_manual(voltage: Rc<RefCell<f64>>, voltage_shared: Arc<RwLock<f64>
 pub fn get_pos_zaber<T: Backend>(
     zaber_conn: Rc<RefCell<ZaberConn<T>>>,
 ) -> Result<(f64, f64, bool, bool)> {
-    let mut pos_parallel = 0.;
+    let mut pos_parallel = 0;
     let mut busy_parallel = false;
-    let mut pos_cross = 0.;
+    let mut pos_cross = 0;
     let mut busy_cross = false;
     for reply in zaber_conn.borrow_mut().command_reply_n_iter("get pos", 2)? {
         let reply = reply?.check(check::unchecked())?;
@@ -104,7 +137,7 @@ pub fn get_pos_zaber<T: Backend>(
                     .data()
                     .split_whitespace()
                     .next()
-                    .ok_or(anyhow!(""))?
+                    .ok_or(anyhow!("only one value returned"))?
                     .parse()?;
                 busy_parallel = if reply.status() == Status::Busy {
                     true
@@ -129,8 +162,8 @@ pub fn get_pos_zaber<T: Backend>(
         }
     }
     return Ok((
-        pos_parallel * MICROSTEP_SIZE,
-        pos_cross * MICROSTEP_SIZE,
+        steps_to_mm(pos_parallel),
+        steps_to_mm(pos_cross),
         busy_parallel,
         busy_cross,
     ));
@@ -140,13 +173,29 @@ pub fn move_parallel_zaber<T: Backend>(
     zaber_conn: Rc<RefCell<ZaberConn<T>>>,
     pos: f64,
 ) -> Result<()> {
-    let cmd = format!("lockstep 1 move abs {}", (pos / MICROSTEP_SIZE) as u64);
+    let cmd = format!("lockstep 1 move abs {}", mm_to_steps(pos));
     let _ = zaber_conn.borrow_mut().command_reply((1, cmd))?.flag_ok()?;
     Ok(())
 }
 
 pub fn move_cross_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>, pos: f64) -> Result<()> {
-    let cmd = format!("move abs {}", (pos / MICROSTEP_SIZE) as u64);
+    let cmd = format!("move abs {}", mm_to_steps(pos));
     let _ = zaber_conn.borrow_mut().command_reply((2, cmd))?.flag_ok()?;
     Ok(())
+}
+
+pub fn steps_to_mm(steps: u64) -> f64 {
+    steps as f64 * MICROSTEP_SIZE / 1000.
+}
+
+pub fn mm_to_steps(millis: f64) -> u64 {
+    (millis * 1000. / MICROSTEP_SIZE) as u64
+}
+
+pub fn mm_per_sec_to_steps_per_sec(millis_per_s: f64) -> u64 {
+    (millis_per_s * 1000. * VELOCITY_FACTOR / MICROSTEP_SIZE) as u64
+}
+
+pub fn steps_per_sec_to_mm_per_sec(steps_per_sec: u64) -> f64 {
+    steps_per_sec as f64 * MICROSTEP_SIZE / 1000. / VELOCITY_FACTOR
 }

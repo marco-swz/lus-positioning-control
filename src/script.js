@@ -64,7 +64,9 @@ function handleClickStop() {
 
 function handleMouseupSliderPos() {
     console.assert(gSocket != null, 'Websocket not initialized');
-    gSocket.send(this.value);
+    const posParallel = document.querySelector('#inp-pos-parallel').value;
+    const posCross = document.querySelector('#inp-pos-cross').value;
+    gSocket.send(posParallel + ' ' + posCross);
 }
 
 function loadConfig() {
@@ -102,7 +104,6 @@ function loadOpcua() {
 
 function connectWebsocketManual() {
     gSocket = new WebSocket('ws://localhost:8080/ws');
-    let $inpActual = document.querySelector('#inp-pos-actual');
     let $btnStart = document.querySelector('#btn-start');
     let $btnStop = document.querySelector('#btn-stop');
 
@@ -118,7 +119,8 @@ function connectWebsocketManual() {
                 }
                 document.querySelector('#' + key).value = val;
             });
-        document.querySelector('#inp-pos-actual').value = data['position_parallel'];
+        document.querySelector('#inp-pos-actual-parallel').value = data['position_parallel'];
+        document.querySelector('#inp-pos-actual-cross').value = data['position_cross'];
 
         if (data['control_state'] !== 'Stopped') {
             $btnStart.hidden = true;

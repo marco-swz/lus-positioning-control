@@ -108,12 +108,12 @@ form {
 }
 
 
-#cont-slider-pos {
+.cont-slider-pos {
     display: flex;
     flex-direction: column;
     margin-bottom: 20px;
 
-    & #cont-min-max {
+    & .cont-min-max {
         display: flex;
         justify-content: space-between;
     }
@@ -127,7 +127,7 @@ form {
     }
 }
 
-#form-opcua fieldset {
+fieldset {
     margin: 5px 0;
     border: 1px solid darkgrey;
     border-radius: 6px;

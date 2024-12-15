@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::Local;
 use crossbeam_channel::bounded;
+use zaber::{steps_per_sec_to_mm_per_sec, steps_to_mm, MAX_POS, MAX_SPEED};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -72,6 +73,13 @@ fn main() {
             serial_device: "/dev/ttyACM0".to_string(),
             opcua_config_path: "opcua_config.conf".into(),
             backend: Backend::Ramp,
+            limit_max_parallel: steps_to_mm(MAX_POS),
+            limit_min_parallel: 0.,
+            limit_max_cross: steps_to_mm(MAX_POS),
+            limit_min_cross: 0.,
+            maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+            maxspeed_parallel: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+            offset_parallel: 0.,
         }))),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
