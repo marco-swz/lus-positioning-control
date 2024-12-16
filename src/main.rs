@@ -54,9 +54,9 @@ fn main() {
     let shared_state = SharedState {
         voltage_gleeble: 0.,
         position_cross: 0.,
-        position_parallel: 0.,
+        position_coax: 0.,
         busy_cross: false,
-        busy_parallel: false,
+        busy_coax: false,
         control_state: ControlStatus::Stopped,
         error: None,
         timestamp: Local::now(),
@@ -73,13 +73,13 @@ fn main() {
             serial_device: "/dev/ttyACM0".to_string(),
             opcua_config_path: "opcua_config.conf".into(),
             backend: Backend::Ramp,
-            limit_max_parallel: steps_to_mm(MAX_POS),
-            limit_min_parallel: 0.,
+            limit_max_coax: steps_to_mm(MAX_POS),
+            limit_min_coax: 0.,
             limit_max_cross: steps_to_mm(MAX_POS),
             limit_min_cross: 0.,
             maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-            maxspeed_parallel: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-            offset_parallel: 0.,
+            maxspeed_coax: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+            offset_coax: 0.,
         }))),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
@@ -117,11 +117,23 @@ fn main() {
             tracing::debug!("control waiting for start");
             let _ = rx_start.recv();
             tracing::debug!("start signal received");
+
+            // There might be more signals in channel,
+            // they need to be cleared.
+            while !state.rx_stop.is_empty() {
+                let _ = state.rx_stop.try_recv();
+            }
+            while !rx_start.is_empty() {
+                let _ = rx_start.try_recv();
+            }
         }
 
         tracing::debug!("trying to init control");
         match init(&mut state) {
-            Ok(_) => stopped = true,
+            Ok(_) => {
+                stopped = true;
+                continue;
+            }
             Err(e) => {
                 tracing::error!("control error: {}", &e);
                 state.shared.control_state = ControlStatus::Error;

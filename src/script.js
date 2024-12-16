@@ -64,7 +64,7 @@ function handleClickStop() {
 
 function handleMouseupSliderPos() {
     console.assert(gSocket != null, 'Websocket not initialized');
-    const posParallel = document.querySelector('#inp-pos-parallel').value;
+    const posParallel = document.querySelector('#inp-pos-coax').value;
     const posCross = document.querySelector('#inp-pos-cross').value;
     gSocket.send(posParallel + ' ' + posCross);
 }
@@ -72,11 +72,29 @@ function handleMouseupSliderPos() {
 function loadConfig() {
     fetch('/config')
         .then(x => x.json())
-        .then(x => Object.entries(x)
-            .forEach(function([key, val]) {
-                document.querySelector(`[name=${key}]`).value = val;
-            })
-        );
+        .then(x => {
+            Object.entries(x)
+                .forEach(function([key, val]) {
+                    document.querySelector(`[name=${key}]`).value = val;
+                });
+
+            const backend = document.querySelector('select[name="backend"]').value;
+            if (backend === 'Manual') {
+                document.querySelector('#inp-pos-coax').disabled = false;
+                document.querySelector('#inp-pos-cross').disabled = false;
+                document.querySelector('#inp-pos-min-coax').disabled = false;
+                document.querySelector('#inp-pos-max-coax').disabled = false;
+                document.querySelector('#inp-pos-min-cross').disabled = false;
+                document.querySelector('#inp-pos-max-cross').disabled = false;
+            } else {
+                document.querySelector('#inp-pos-coax').disabled = true;
+                document.querySelector('#inp-pos-cross').disabled = true;
+                document.querySelector('#inp-pos-min-coax').disabled = true;
+                document.querySelector('#inp-pos-max-coax').disabled = true;
+                document.querySelector('#inp-pos-min-cross').disabled = true;
+                document.querySelector('#inp-pos-max-cross').disabled = true;
+            }
+        });
 }
 
 function loadOpcua() {
@@ -119,7 +137,7 @@ function connectWebsocketManual() {
                 }
                 document.querySelector('#' + key).value = val;
             });
-        document.querySelector('#inp-pos-actual-parallel').value = data['position_parallel'];
+        document.querySelector('#inp-pos-actual-coax').value = data['position_coax'];
         document.querySelector('#inp-pos-actual-cross').value = data['position_cross'];
 
         if (data['control_state'] !== 'Stopped') {

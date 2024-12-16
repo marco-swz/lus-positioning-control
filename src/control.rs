@@ -27,7 +27,7 @@ pub fn run(
     state: &mut ExecState,
     mut get_voltage: impl FnMut() -> Result<f64>,
     mut get_pos: impl FnMut() -> Result<(f64, f64, bool, bool)>,
-    mut move_parallel: impl FnMut(f64) -> Result<()>,
+    mut move_coax: impl FnMut(f64) -> Result<()>,
     _move_cross: impl FnMut(f64) -> Result<()>,
 ) -> Result<()> {
     state.shared.control_state = ControlStatus::Running;
@@ -44,18 +44,18 @@ pub fn run(
         tracing::debug!("Voltage reading {voltage_gleeble}");
         state.shared.voltage_gleeble = voltage_gleeble;
 
-        let target_position_parallel = steps_to_mm(MAX_POS) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
+        let target_position_coax = steps_to_mm(MAX_POS) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
 
-        let (pos_parallel, pos_cross, busy_parallel, busy_cross) = get_pos()?;
-        state.shared.position_parallel = pos_parallel;
+        let (pos_coax, pos_cross, busy_coax, busy_cross) = get_pos()?;
+        state.shared.position_coax = pos_coax;
         state.shared.position_cross = pos_cross;
-        state.shared.busy_parallel = busy_parallel;
+        state.shared.busy_coax = busy_coax;
         state.shared.busy_cross = busy_cross;
         state.shared.timestamp = Local::now();
 
-        tracing::debug!("Position parallel: target={target_position_parallel} actual={pos_parallel}");
-        if target_position_parallel != pos_parallel {
-            move_parallel(target_position_parallel)?;
+        tracing::debug!("Position coax: target={target_position_coax} actual={pos_coax}");
+        if target_position_coax != pos_coax {
+            move_coax(target_position_coax)?;
         }
 
         if let Ok(mut out) = state.out_channel.try_write() {
@@ -90,9 +90,9 @@ mod tests {
             shared: SharedState {
                 voltage_gleeble: 0.,
                 position_cross: 0.,
-                position_parallel: 0.,
+                position_coax: 0.,
                 busy_cross: false,
-                busy_parallel: false,
+                busy_coax: false,
                 control_state: ControlState::Init,
                 error: None,
             },
@@ -147,9 +147,9 @@ mod tests {
             state.shared,
             SharedState {
                 voltage_gleeble: 5.5,
-                position_parallel: 20.,
+                position_coax: 20.,
                 position_cross: 10.1,
-                busy_parallel: true,
+                busy_coax: true,
                 busy_cross: false,
                 control_state: ControlState::Stopped,
                 error: None,
@@ -187,9 +187,9 @@ mod tests {
             state.shared,
             SharedState {
                 voltage_gleeble: 6.5,
-                position_parallel: 20.1,
+                position_coax: 20.1,
                 position_cross: 10.1,
-                busy_parallel: false,
+                busy_coax: false,
                 busy_cross: false,
                 control_state: ControlState::Running,
                 error: None,
@@ -227,9 +227,9 @@ mod tests {
             state.shared,
             SharedState {
                 voltage_gleeble: 6.5,
-                position_parallel: 20.1,
+                position_coax: 20.1,
                 position_cross: 10.1,
-                busy_parallel: false,
+                busy_coax: false,
                 busy_cross: false,
                 control_state: ControlState::Running,
                 error: None,
@@ -259,9 +259,9 @@ mod tests {
             state.shared,
             SharedState {
                 voltage_gleeble: 5.5,
-                position_parallel: 0.,
+                position_coax: 0.,
                 position_cross: 0.,
-                busy_parallel: false,
+                busy_coax: false,
                 busy_cross: false,
                 control_state: ControlState::Running,
                 error: None,

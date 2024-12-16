@@ -107,11 +107,10 @@ form {
     color: red;
 }
 
-
 .cont-slider-pos {
     display: flex;
     flex-direction: column;
-    margin-bottom: 20px;
+    margin-top: 15px;
 
     & .cont-min-max {
         display: flex;

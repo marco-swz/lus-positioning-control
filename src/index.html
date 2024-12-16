@@ -13,9 +13,9 @@
             <span>Voltage</span>
             <input id="voltage_gleeble" disabled />
             <span>Position Parallel</span>
-            <input id="position_parallel" disabled />
+            <input id="position_coax" disabled />
             <span>Busy Parallel</span>
-            <input id="busy_parallel" disabled />
+            <input id="busy_coax" disabled />
             <span>Position Cross</span>
             <input id="position_cross" disabled />
             <span>Busy Cross</span>
@@ -32,19 +32,19 @@
         <fieldset>
             <legend>Parallel Axis</legend>
             <div class="grid">
-                <label for="inp-pos-target-parallel">Target Position [mm]</label>
-                <input id="inp-pos-target-parallel" disabled />
-                <label for="inp-pos-actual-parallel">Actual Position [mm]</label>
-                <input id="inp-pos-actual-parallel" disabled />
+                <label for="inp-pos-target-coax">Target Position [mm]</label>
+                <input id="inp-pos-target-coax" disabled />
+                <label for="inp-pos-actual-coax">Actual Position [mm]</label>
+                <input id="inp-pos-actual-coax" disabled />
             </div>
             <div class="cont-slider-pos">
                 <div class="cont-min-max">
-                    <input id="inp-pos-min-parallel" type="number" value="0"
-                        onchange="document.querySelector('#inp-pos-parallel').min = this.value" />
-                    <input id="inp-pos-max-parallel" type="number" value="100"
-                        onchange="document.querySelector('#inp-pos-parallel').max = this.value" />
+                    <input id="inp-pos-min-coax" type="number" value="0"
+                        onchange="document.querySelector('#inp-pos-coax').min = this.value" />
+                    <input id="inp-pos-max-coax" type="number" value="100"
+                        onchange="document.querySelector('#inp-pos-coax').max = this.value" />
                 </div>
-                <input id="inp-pos-parallel" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos()" />
+                <input id="inp-pos-coax" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos()" />
             </div>
         </fieldset>
         <fieldset>
@@ -91,13 +91,13 @@
                 <label>Max. Voltage [V]</label>
                 <input name="voltage_max" value="" required />
                 <label>Min. Limit [mm]</label>
-                <input name="limit_min_parallel" value="" required />
+                <input name="limit_min_coax" value="" required />
                 <label>Max. Limit [mm]</label>
-                <input name="limit_max_parallel" value="" required />
+                <input name="limit_max_coax" value="" required />
                 <label>Max. Speed [mm/s]</label>
-                <input name="maxspeed_parallel" value="" required />
+                <input name="maxspeed_coax" value="" required />
                 <label>Axis Offset [mm]</label>
-                <input name="offset_parallel" value="" required />
+                <input name="offset_coax" value="" required />
             </fieldset>
             <fieldset class="grid">
                 <legend>Cross Axis</legend>

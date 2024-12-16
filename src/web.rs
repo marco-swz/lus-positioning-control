@@ -61,7 +61,9 @@ async fn handle_default() -> Html<String> {
 
 async fn handle_refresh(State(state): State<WebState>) -> Json<SharedState> {
     tracing::debug!("GET /refresh requested");
-    return Json(state.zaber_state.read().unwrap().clone());
+    let state = Json(state.zaber_state.read().unwrap().clone());
+    tracing::debug!("GET /refresh exit");
+    return state;
 }
 
 async fn handle_post_config(State(state): State<WebState>, Form(config_new): Form<utils::Config>) {
@@ -138,11 +140,13 @@ async fn handle_post_opcua(State(state): State<WebState>, Form(new_config): Form
 async fn handle_post_start(State(state): State<WebState>) {
     tracing::debug!("POST start requested");
     let _ = state.tx_start_control.try_send(());
+    tracing::debug!("POST start exit");
 }
 
 async fn handle_post_stop(State(state): State<WebState>) {
     tracing::debug!("POST stop requested");
     let _ = state.tx_stop_control.try_send(());
+    tracing::debug!("POST stop exit");
 }
 
 async fn handle_get_config(State(state): State<WebState>) -> Json<utils::Config> {

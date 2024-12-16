@@ -50,25 +50,25 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 
     zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
 
-    if config.offset_parallel > 0. {
+    if config.offset_coax > 0. {
         zaber_conn
-            .command_reply((1, format!("1 move rel {}", mm_to_steps(config.offset_parallel))))?
+            .command_reply((1, format!("1 move rel {}", mm_to_steps(config.offset_coax))))?
             .flag_ok()?;
-    } else if config.offset_parallel < 0. {
+    } else if config.offset_coax < 0. {
         zaber_conn
-            .command_reply((1, format!("1 move rel {}", mm_to_steps(config.offset_parallel.abs()))))?
+            .command_reply((1, format!("1 move rel {}", mm_to_steps(config.offset_coax.abs()))))?
             .flag_ok()?;
     }
     zaber_conn.poll_until_idle(1, check::flag_ok())?;
 
     zaber_conn
-        .command_reply((1, format!("set maxspeed {}", mm_per_sec_to_steps_per_sec(config.maxspeed_parallel))))?
+        .command_reply((1, format!("set maxspeed {}", mm_per_sec_to_steps_per_sec(config.maxspeed_coax))))?
         .flag_ok()?;
     zaber_conn
-        .command_reply((1, format!("set limit.max {}", mm_to_steps(config.limit_max_parallel))))?
+        .command_reply((1, format!("set limit.max {}", mm_to_steps(config.limit_max_coax))))?
         .flag_ok()?;
     zaber_conn
-        .command_reply((1, format!("set limit.min {}", mm_to_steps(config.limit_min_parallel))))?
+        .command_reply((1, format!("set limit.min {}", mm_to_steps(config.limit_min_coax))))?
         .flag_ok()?;
 
     zaber_conn
@@ -88,7 +88,7 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
     let zaber_conn = Rc::new(RefCell::new(zaber_conn));
 
     let get_pos = || get_pos_zaber(Rc::clone(&zaber_conn));
-    let move_parallel = |pos| move_parallel_zaber(Rc::clone(&zaber_conn), pos);
+    let move_coax = |pos| move_coax_zaber(Rc::clone(&zaber_conn), pos);
     let move_cross = |pos| move_cross_zaber(Rc::clone(&zaber_conn), pos);
 
     match config.backend {
@@ -97,11 +97,11 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
             let voltage = Rc::new(RefCell::new(0.));
             let get_voltage =
                 move || get_voltage_manual(Rc::clone(&voltage), Arc::clone(&voltage_shared));
-            return run(state, get_voltage, get_pos, move_parallel, move_cross);
+            return run(state, get_voltage, get_pos, move_coax, move_cross);
         }
         _ => {
             let get_voltage = || get_voltage_zaber(Rc::clone(&zaber_conn));
-            return run(state, get_voltage, get_pos, move_parallel, move_cross);
+            return run(state, get_voltage, get_pos, move_coax, move_cross);
         }
     };
 }
@@ -125,21 +125,21 @@ fn get_voltage_manual(voltage: Rc<RefCell<f64>>, voltage_shared: Arc<RwLock<f64>
 pub fn get_pos_zaber<T: Backend>(
     zaber_conn: Rc<RefCell<ZaberConn<T>>>,
 ) -> Result<(f64, f64, bool, bool)> {
-    let mut pos_parallel = 0;
-    let mut busy_parallel = false;
+    let mut pos_coax = 0;
+    let mut busy_coax = false;
     let mut pos_cross = 0;
     let mut busy_cross = false;
     for reply in zaber_conn.borrow_mut().command_reply_n_iter("get pos", 2)? {
         let reply = reply?.check(check::unchecked())?;
         match reply.target().device() {
             1 => {
-                pos_parallel = reply
+                pos_coax = reply
                     .data()
                     .split_whitespace()
                     .next()
                     .ok_or(anyhow!("only one value returned"))?
                     .parse()?;
-                busy_parallel = if reply.status() == Status::Busy {
+                busy_coax = if reply.status() == Status::Busy {
                     true
                 } else {
                     false
@@ -162,14 +162,14 @@ pub fn get_pos_zaber<T: Backend>(
         }
     }
     return Ok((
-        steps_to_mm(pos_parallel),
+        steps_to_mm(pos_coax),
         steps_to_mm(pos_cross),
-        busy_parallel,
+        busy_coax,
         busy_cross,
     ));
 }
 
-pub fn move_parallel_zaber<T: Backend>(
+pub fn move_coax_zaber<T: Backend>(
     zaber_conn: Rc<RefCell<ZaberConn<T>>>,
     pos: f64,
 ) -> Result<()> {

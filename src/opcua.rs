@@ -11,8 +11,8 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
 
     let node_position_cross = NodeId::new(ns, "position_cross");
     let node_busy_cross = NodeId::new(ns, "busy_cross");
-    let node_position_parallel = NodeId::new(ns, "position_parallel");
-    let node_busy_parallel = NodeId::new(ns, "busy_parallel");
+    let node_position_coax = NodeId::new(ns, "position_coax");
+    let node_busy_coax = NodeId::new(ns, "busy_coax");
     let node_status = NodeId::new(ns, "status");
 
     let root_id = NodeId::objects_folder_id();
@@ -36,19 +36,19 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
             .value(false)
             .insert(&mut address_space);
 
-        let folder_parallel_id = address_space
-            .add_folder("parallel-slide", "parallel-slide", &root_id)
+        let folder_coax_id = address_space
+            .add_folder("coax-slide", "coax-slide", &root_id)
             .unwrap();
 
-        VariableBuilder::new(&node_position_parallel, "position", "position [mm]")
+        VariableBuilder::new(&node_position_coax, "position", "position [mm]")
             .value(0.)
             .data_type(DataTypeId::Double)
-            .organized_by(&folder_parallel_id)
+            .organized_by(&folder_coax_id)
             .insert(&mut address_space);
 
-        VariableBuilder::new(&node_busy_parallel, "busy", "busy")
+        VariableBuilder::new(&node_busy_coax, "busy", "busy")
             .data_type(DataTypeId::Boolean)
-            .organized_by(&folder_parallel_id)
+            .organized_by(&folder_coax_id)
             .value(false)
             .insert(&mut address_space);
 
@@ -72,14 +72,14 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
 
         let mut address_space = address_space.write();
         let _ = address_space.set_variable_value(
-            node_position_parallel.clone(),
-            zaber_state.position_parallel,
+            node_position_coax.clone(),
+            zaber_state.position_coax,
             &now,
             &now,
         );
         let _ = address_space.set_variable_value(
-            node_busy_parallel.clone(),
-            zaber_state.busy_parallel,
+            node_busy_coax.clone(),
+            zaber_state.busy_coax,
             &now,
             &now,
         );
