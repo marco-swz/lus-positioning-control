@@ -1,9 +1,9 @@
 use anyhow::Result;
 use chrono::Local;
 use crossbeam_channel::bounded;
-use zaber::{steps_per_sec_to_mm_per_sec, steps_to_mm, MAX_POS, MAX_SPEED};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
+use zaber::{steps_per_sec_to_mm_per_sec, steps_to_mm, MAX_POS, MAX_SPEED};
 
 mod control;
 use control::init;
@@ -49,10 +49,11 @@ fn main() {
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
-    let voltage_manual = Arc::new(RwLock::new(0.));
+    let target_manual = Arc::new(RwLock::new((0., 0.)));
 
     let shared_state = SharedState {
-        voltage_gleeble: 0.,
+        target_coax: 0.,
+        target_cross: 0.,
         position_cross: 0.,
         position_coax: 0.,
         busy_cross: false,
@@ -83,7 +84,7 @@ fn main() {
         }))),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
-        voltage_manual: Arc::clone(&voltage_manual),
+        target_manual: Arc::clone(&target_manual),
     };
 
     let queue_clone = Arc::clone(&state_channel);
@@ -98,7 +99,7 @@ fn main() {
         tx_start_control: tx_start.clone(),
         config: state.config.clone(),
         opcua_state,
-        voltage_manual,
+        target_manual,
     };
     std::thread::spawn(|| run_web_server(web_state));
 

@@ -8,7 +8,12 @@ use crate::{
     control::run,
     utils::{self, ExecState},
 };
+use ads1x1x::ic::{Ads1115, Resolution16Bit};
+use ads1x1x::mode::OneShot;
+use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
+use ch341::i2c::{self, I2cDevice};
+use linux_embedded_hal::nb::block;
 use zproto::{
     ascii::{
         response::{check, Status},
@@ -56,32 +61,58 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
             .flag_ok()?;
     } else if config.offset_coax < 0. {
         zaber_conn
-            .command_reply((1, format!("1 move rel {}", mm_to_steps(config.offset_coax.abs()))))?
+            .command_reply((
+                1,
+                format!("1 move rel {}", mm_to_steps(config.offset_coax.abs())),
+            ))?
             .flag_ok()?;
     }
     zaber_conn.poll_until_idle(1, check::flag_ok())?;
 
     zaber_conn
-        .command_reply((1, format!("set maxspeed {}", mm_per_sec_to_steps_per_sec(config.maxspeed_coax))))?
+        .command_reply((
+            1,
+            format!(
+                "set maxspeed {}",
+                mm_per_sec_to_steps_per_sec(config.maxspeed_coax)
+            ),
+        ))?
         .flag_ok()?;
     zaber_conn
-        .command_reply((1, format!("set limit.max {}", mm_to_steps(config.limit_max_coax))))?
+        .command_reply((
+            1,
+            format!("set limit.max {}", mm_to_steps(config.limit_max_coax)),
+        ))?
         .flag_ok()?;
     zaber_conn
-        .command_reply((1, format!("set limit.min {}", mm_to_steps(config.limit_min_coax))))?
+        .command_reply((
+            1,
+            format!("set limit.min {}", mm_to_steps(config.limit_min_coax)),
+        ))?
         .flag_ok()?;
 
     zaber_conn
-        .command_reply((2, format!("set maxspeed {}", mm_per_sec_to_steps_per_sec(config.maxspeed_cross))))?
+        .command_reply((
+            2,
+            format!(
+                "set maxspeed {}",
+                mm_per_sec_to_steps_per_sec(config.maxspeed_cross)
+            ),
+        ))?
         .flag_ok()?;
     zaber_conn
-        .command_reply((2, format!("set limit.max {}", mm_to_steps(config.limit_max_cross))))?
+        .command_reply((
+            2,
+            format!("set limit.max {}", mm_to_steps(config.limit_max_cross)),
+        ))?
         .flag_ok()?;
     zaber_conn
-        .command_reply((2, format!("set limit.min {}", mm_to_steps(config.limit_min_cross))))?
+        .command_reply((
+            2,
+            format!("set limit.min {}", mm_to_steps(config.limit_min_cross)),
+        ))?
         .flag_ok()?;
 
-    // 8.5 links
     zaber_conn
         .command_reply((1, "lockstep 1 setup enable 1 2"))?
         .flag_ok()?;
@@ -94,33 +125,87 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 
     match config.backend {
         utils::Backend::Manual => {
-            let voltage_shared = Arc::clone(&state.voltage_manual);
-            let voltage = Rc::new(RefCell::new(0.));
-            let get_voltage =
-                move || get_voltage_manual(Rc::clone(&voltage), Arc::clone(&voltage_shared));
-            return run(state, get_voltage, get_pos, move_coax, move_cross);
+            let target_shared = Arc::clone(&state.target_manual);
+            let target = Rc::new(RefCell::new((0., 0.)));
+            let get_target =
+                move || get_target_manual(Rc::clone(&target), Arc::clone(&target_shared));
+            return run(state, get_target, get_pos, move_coax, move_cross);
         }
+
+        utils::Backend::Tracking => {
+            let Ok(dev) = i2c::new() else {
+                return Err(anyhow!("Failed to create I2C device"));
+            };
+            let mut adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
+            let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
+                return Err(anyhow!("Failed set ADC range"));
+            };
+            let adc = Rc::new(RefCell::new(adc));
+            let get_target = move || {
+                get_target_tracking(
+                    Rc::clone(&adc),
+                    (config.voltage_min, config.voltage_max),
+                    (config.limit_min_coax, config.limit_max_coax),
+                )
+            };
+            return run(state, get_target, get_pos, move_coax, move_cross);
+        }
+
         _ => {
-            let get_voltage = || get_voltage_zaber(Rc::clone(&zaber_conn));
+            let get_voltage = || {
+                get_target_zaber(
+                    Rc::clone(&zaber_conn),
+                    (config.voltage_min, config.voltage_max),
+                    (config.limit_min_coax, config.limit_max_coax),
+                )
+            };
             return run(state, get_voltage, get_pos, move_coax, move_cross);
         }
     };
 }
 
-pub fn get_voltage_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Result<f64> {
+pub fn get_target_zaber<T: Backend>(
+    zaber_conn: Rc<RefCell<ZaberConn<T>>>,
+    voltage_range: (f64, f64),
+    pos_range: (f64, f64),
+) -> Result<(f64, f64)> {
     let cmd = format!("io get ai 1");
     let reply = zaber_conn.borrow_mut().command_reply((2, cmd))?.flag_ok()?;
-    return Ok(reply.data().parse()?);
+    let target_coax = voltage_to_mm(reply.data().parse()?, voltage_range, pos_range);
+    // TODO(marco): Set target for cross axis
+    let target_cross = 0.;
+    return Ok((target_coax, target_cross));
 }
 
-fn get_voltage_manual(voltage: Rc<RefCell<f64>>, voltage_shared: Arc<RwLock<f64>>) -> Result<f64> {
-    let ref mut voltage = *voltage.borrow_mut();
-    let Ok(shared) = voltage_shared.try_read() else {
-        return Ok(*voltage);
+fn get_target_manual(
+    target: Rc<RefCell<(f64, f64)>>,
+    target_shared: Arc<RwLock<(f64, f64)>>,
+) -> Result<(f64, f64)> {
+    let ref mut target = *target.borrow_mut();
+    let Ok(shared) = target_shared.try_read() else {
+        return Ok(*target);
     };
-    *voltage = *shared;
+    *target = *shared;
 
     return Ok(*shared);
+}
+
+fn get_target_tracking(
+    adc: Rc<RefCell<Ads1x1x<I2cDevice, Ads1115, Resolution16Bit, OneShot>>>,
+    voltage_range: (f64, f64),
+    pos_range: (f64, f64),
+) -> Result<(f64, f64)> {
+    let ref mut adc = *adc.borrow_mut();
+    let Ok(raw) = block!(adc.read(channel::DifferentialA0A1)) else {
+        return Err(anyhow!("Failed to read from ADC"));
+    };
+    let voltage = raw as f64 * 4.069 / 32767.; // 65536.;
+    tracing::debug!("voltage read {}", voltage);
+
+    let target_coax = voltage_to_mm(voltage, voltage_range, pos_range);
+    // TODO(marco): Set target for cross axis
+    let target_cross = 0.;
+    return Ok((target_coax, target_cross));
 }
 
 pub fn get_pos_zaber<T: Backend>(
@@ -170,10 +255,7 @@ pub fn get_pos_zaber<T: Backend>(
     ));
 }
 
-pub fn move_coax_zaber<T: Backend>(
-    zaber_conn: Rc<RefCell<ZaberConn<T>>>,
-    pos: f64,
-) -> Result<()> {
+pub fn move_coax_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>, pos: f64) -> Result<()> {
     let cmd = format!("lockstep 1 move abs {}", mm_to_steps(pos));
     let _ = zaber_conn.borrow_mut().command_reply((1, cmd))?.flag_ok()?;
     Ok(())
@@ -199,4 +281,10 @@ pub fn mm_per_sec_to_steps_per_sec(millis_per_s: f64) -> u64 {
 
 pub fn steps_per_sec_to_mm_per_sec(steps_per_sec: u64) -> f64 {
     steps_per_sec as f64 * MICROSTEP_SIZE / 1000. / VELOCITY_FACTOR
+}
+
+pub fn voltage_to_mm(voltage: f64, voltage_range: (f64, f64), pos_range: (f64, f64)) -> f64 {
+    return pos_range.1
+        - (pos_range.1 - pos_range.0) / (voltage_range.1 - voltage_range.0)
+            * (voltage - voltage_range.0);
 }

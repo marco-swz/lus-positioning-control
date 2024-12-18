@@ -12,6 +12,7 @@ pub type StopChannel = Receiver<()>;
 pub enum Backend {
     Zaber,
     Ramp,
+    Tracking,
     Manual,
 }
 
@@ -56,7 +57,8 @@ impl Display for ControlStatus {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SharedState {
-    pub voltage_gleeble: f64,
+    pub target_coax: f64,
+    pub target_cross: f64,
     pub position_cross: f64,
     pub position_coax: f64,
     pub busy_cross: bool,
@@ -71,7 +73,7 @@ pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
     pub rx_stop: StopChannel,
-    pub voltage_manual: Arc<RwLock<f64>>,
+    pub target_manual: Arc<RwLock<(f64, f64)>>,
     pub config: Arc<RwLock<Config>>,
 }
 
