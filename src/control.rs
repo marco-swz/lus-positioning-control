@@ -35,6 +35,8 @@ pub fn run(
     let config = state.config.read().unwrap();
     let voltage_max = config.voltage_max;
     let voltage_min = config.voltage_min;
+    let limit_min = config.limit_min_coax;
+    let limit_max = config.limit_max_coax;
     let cycle_time = config.cycle_time;
     drop(config);
 
@@ -44,7 +46,8 @@ pub fn run(
         tracing::debug!("Voltage reading {voltage_gleeble}");
         state.shared.voltage_gleeble = voltage_gleeble;
 
-        let target_position_coax = steps_to_mm(MAX_POS) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
+        //let target_position_coax = steps_to_mm(MAX_POS) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
+        let target_position_coax = limit_max - (limit_max - limit_min) / (voltage_max - voltage_min) * (voltage_gleeble - voltage_min);
 
         let (pos_coax, pos_cross, busy_coax, busy_cross) = get_pos()?;
         state.shared.position_coax = pos_coax;

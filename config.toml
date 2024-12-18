@@ -1,11 +1,11 @@
-cycle_time = 1000
+cycle_time = 250
 restart_timeout = 10000
-voltage_min = 5.0
-voltage_max = 100.0
+voltage_min = 0.0
+voltage_max = 8.5
 serial_device = "/dev/ttyACM0"
 opcua_config_path = "opcua_config.conf"
-backend = "Ramp"
-limit_max_coax = 99.9996015625
+backend = "Zaber"
+limit_max_coax = 64.0
 limit_min_coax = 0.0
 maxspeed_coax = 46.5087890625
 offset_coax = 0.0

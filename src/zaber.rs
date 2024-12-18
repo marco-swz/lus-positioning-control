@@ -81,6 +81,7 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
         .command_reply((2, format!("set limit.min {}", mm_to_steps(config.limit_min_cross))))?
         .flag_ok()?;
 
+    // 8.5 links
     zaber_conn
         .command_reply((1, "lockstep 1 setup enable 1 2"))?
         .flag_ok()?;
@@ -108,7 +109,7 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 
 pub fn get_voltage_zaber<T: Backend>(zaber_conn: Rc<RefCell<ZaberConn<T>>>) -> Result<f64> {
     let cmd = format!("io get ai 1");
-    let reply = zaber_conn.borrow_mut().command_reply((1, cmd))?.flag_ok()?;
+    let reply = zaber_conn.borrow_mut().command_reply((2, cmd))?.flag_ok()?;
     return Ok(reply.data().parse()?);
 }
 

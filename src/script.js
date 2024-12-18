@@ -167,9 +167,13 @@ loadOpcua();
 connectWebsocketManual();
 
 document.addEventListener('DOMContentLoaded', () => {
-    const $inpTarget = document.querySelector('#inp-pos-target');
-    document.querySelector('#inp-pos').addEventListener('input', (e) => {
-        $inpTarget.value = e.currentTarget.value;
+    const $inpTargetCoax = document.querySelector('#inp-pos-target-coax');
+    document.querySelector('#inp-pos-coax').addEventListener('input', (e) => {
+        $inpTargetCoax.value = e.currentTarget.value;
     })
 
+    const $inpTargetCross = document.querySelector('#inp-pos-target-cross');
+    document.querySelector('#inp-pos-cross').addEventListener('input', (e) => {
+        $inpTargetCross.value = e.currentTarget.value;
+    })
 });
