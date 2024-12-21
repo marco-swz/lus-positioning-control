@@ -1,6 +1,9 @@
+use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::Result;
 use chrono::Local;
 use crossbeam_channel::bounded;
+use ftdi_embedded_hal::libftd2xx::{list_devices, Ft232h, Ftdi};
+use ftdi_embedded_hal::{libftd2xx, FtHal};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use zaber::{steps_per_sec_to_mm_per_sec, steps_to_mm, MAX_POS, MAX_SPEED};
@@ -43,7 +46,28 @@ fn read_config() -> Result<Config> {
     }
 }
 
+fn test() { 
+      let mut devices = list_devices().unwrap();
+
+    while let Some(device) = devices.pop() {
+        println!("device: {device:?}");
+    }
+
+    //let device = libftd2xx::Ft232h::with_description("Single RS232-HS").unwrap();
+    let device: Ft232h = Ftdi::new().unwrap().try_into().unwrap();
+
+    let hal = FtHal::init_freq(device, 400_000).unwrap();
+    let dev = hal.i2c().unwrap();
+    let mut adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
+    adc.set_full_scale_range(FullScaleRange::Within4_096V)
+        .unwrap();
+    let raw = adc.read(channel::DifferentialA0A1).unwrap();
+    println!("{}", raw);
+}
+
 fn main() {
+    test();
+    return;
     tracing_subscriber::fmt::init();
 
     let (tx_stop, rx_stop) = bounded::<()>(1);
