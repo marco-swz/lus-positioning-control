@@ -2244,6 +2244,7 @@ dependencies = [
  "ftdi-embedded-hal",
  "futures",
  "linux-embedded-hal",
+ "nb 1.1.0",
  "opcua",
  "serde",
  "serde_json",

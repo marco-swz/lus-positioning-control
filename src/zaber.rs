@@ -6,13 +6,16 @@ use std::{
 
 use crate::{
     control::run,
-    utils::{self, Config, ControlStatus, ExecState},
+    utils::{self, Config, ExecState},
 };
 use ads1x1x::ic::{Ads1115, Resolution16Bit};
 use ads1x1x::mode::OneShot;
 use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
-//use ch341::i2c::{self, I2cDevice};
+use ftdi_embedded_hal::{
+    libftd2xx::{self, Ft232h},
+    FtHal, I2c,
+};
 use linux_embedded_hal::nb::block;
 use zproto::{
     ascii::{
@@ -28,8 +31,9 @@ pub const MAX_POS: u32 = 201574; // microsteps
 pub const MAX_SPEED: u32 = 153600; // microsteps/sec
 
 type ZaberConn<T> = Port<'static, T>;
+type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, OneShot>;
 
-fn set_config<T: Backend>(mut zaber_conn: ZaberConn<T>, config: Config) -> Result<ZaberConn<T>> {
+fn init_axes<T: Backend>(mut zaber_conn: ZaberConn<T>, config: &Config) -> Result<ZaberConn<T>> {
     zaber_conn.command_reply_n("system restore", 2, check::unchecked())?;
 
     let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
@@ -96,72 +100,87 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
     };
 
     if config.mock_zaber {
-            let mut port = Port::open_mock();
-            port.backend_mut()
-                .set_write_callback(|message, reply_buffer| {
-                    match message {
-                        b"/1 io get ai 1\n" => write!(reply_buffer, "@01 0 OK BUSY -- 5.5\r\n"),
-                        b"/get pos\n" => write!(
-                            reply_buffer,
-                            "@01 0 OK BUSY -- 20\r\n@02 0 OK BUSY -- 10.1\r\n"
-                        ),
-                        _ => panic!("unexpected message"),
-                    }
-                    .unwrap()
-                });
-            return port;
+        let mut port = Port::open_mock();
+        port.backend_mut()
+            .set_write_callback(|message, reply_buffer| {
+                match message {
+                    b"/get pos\n" => write!(
+                        reply_buffer,
+                        "@01 0 OK BUSY -- 1000\r\n@02 0 OK BUSY -- 10000\r\n"
+                    ),
+                    [b'/', b'1', ..] => write!(reply_buffer, "@01 0 OK BUSY -- 1000\r\n"),
+                    [b'/', b'2', ..] => write!(reply_buffer, "@02 0 OK BUSY -- 2000\r\n"),
+                    _ => Ok(()),
+                }
+                .unwrap()
+            });
+        return init_backend(port, state, config);
     }
 
-    return match Port::open_serial(&serial_device) {
-        Ok(zaber_conn) => zaber_conn,
-        Err(e) => {
-            return Err(anyhow!(
-                "Failed to open Zaber serial port '{}': {}",
-                serial_device,
-                e
-            ))
+    return match Port::open_serial(&config.serial_device) {
+        Ok(zaber_conn) => {
+            let zaber_conn = init_axes(zaber_conn, &config)?;
+            return init_backend(zaber_conn, state, config);
         }
+        Err(e) => Err(anyhow!(
+            "Failed to open Zaber serial port '{}': {}",
+            config.serial_device,
+            e
+        )),
     };
+}
 
-
-
+fn init_backend<T: Backend>(
+    zaber_conn: ZaberConn<T>,
+    state: &mut ExecState,
+    config: Config,
+) -> Result<()> {
     let zaber_conn = Rc::new(RefCell::new(zaber_conn));
 
     let get_pos = || get_pos_zaber(Rc::clone(&zaber_conn));
     let move_coax = |pos| move_coax_zaber(Rc::clone(&zaber_conn), pos);
     let move_cross = |pos| move_cross_zaber(Rc::clone(&zaber_conn), pos);
 
+    let target_shared = Arc::clone(&state.target_manual);
+    let target = Rc::new(RefCell::new((0, 0)));
+
     let config_old = config.clone();
     loop {
         let result = match config.backend {
             utils::Backend::Manual => {
-                let target_shared = Arc::clone(&state.target_manual);
-                let target = Rc::new(RefCell::new((0, 0)));
-                let get_target =
-                    move || get_target_manual(Rc::clone(&target), Arc::clone(&target_shared));
+                // TODO(marco): Is this extra clone really necessary?
+                let target_clone = Rc::clone(&target);
+                let target_shared_clone = Arc::clone(&target_shared);
+                let get_target = move || {
+                    get_target_manual(Rc::clone(&target_clone), Arc::clone(&target_shared_clone))
+                };
                 run(state, get_target, get_pos, move_coax, move_cross)
             }
 
             utils::Backend::Tracking => {
-                /*
-                            let Ok(dev) = i2c::new() else {
-                                return Err(anyhow!("Failed to create I2C device"));
-                            };
-                            let mut adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
-                            let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
-                                return Err(anyhow!("Failed set ADC range"));
-                            };
-                            let adc = Rc::new(RefCell::new(adc));
-                            let get_target = move || {
-                                get_target_tracking(
-                                    Rc::clone(&adc),
-                                    (config.voltage_min, config.voltage_max),
-                                    (config.limit_min_coax, config.limit_max_coax),
-                                )
-                            };
-                            return run(state, get_target, get_pos, move_coax, move_cross);
-                */
-                Ok(())
+                let Ok(device) = libftd2xx::Ft232h::with_description("Single RS232-HS") else {
+                    return Err(anyhow!("Failed to open Ft232h"));
+                };
+
+                let hal = FtHal::init_freq(device, 400_000).unwrap();
+                let Ok(dev) = hal.i2c() else {
+                    return Err(anyhow!("Failed to create I2C device"));
+                };
+                let mut adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
+                let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
+                    return Err(anyhow!("Failed set ADC range"));
+                };
+                let adc = Rc::new(RefCell::new(adc));
+                let get_target = move || {
+                    get_target_tracking(
+                        Rc::clone(&adc),
+                        Rc::clone(&target),
+                        Arc::clone(&target_shared),
+                        (config.voltage_min, config.voltage_max),
+                        (config.limit_min_coax, config.limit_max_coax),
+                    )
+                };
+                return run(state, get_target, get_pos, move_coax, move_cross);
             }
 
             utils::Backend::Zaber => {
@@ -211,23 +230,30 @@ fn get_target_manual(
     return Ok(*shared);
 }
 
-//fn get_target_tracking(
-//    adc: Rc<RefCell<Ads1x1x<I2cDevice, Ads1115, Resolution16Bit, OneShot>>>,
-//    voltage_range: (f64, f64),
-//    pos_range: (f64, f64),
-//) -> Result<(f64, f64)> {
-//    let ref mut adc = *adc.borrow_mut();
-//    let Ok(raw) = block!(adc.read(channel::DifferentialA0A1)) else {
-//        return Err(anyhow!("Failed to read from ADC"));
-//    };
-//    let voltage = raw as f64 * 4.069 / 32767.; // 65536.;
-//    tracing::debug!("voltage read {}", voltage);
-//
-//    let target_coax = voltage_to_mm(voltage, voltage_range, pos_range);
-//    // TODO(marco): Set target for cross axis
-//    let target_cross = 0.;
-//    return Ok((target_coax, target_cross));
-//}
+fn get_target_tracking(
+    adc: Rc<RefCell<Adc>>,
+    target_manual: Rc<RefCell<(u32, u32)>>,
+    target_manual_shared: Arc<RwLock<(u32, u32)>>,
+    voltage_range: (f64, f64),
+    pos_range: (u32, u32),
+) -> Result<(u32, u32)> {
+    let ref mut adc = *adc.borrow_mut();
+    let Ok(raw) = block!(adc.read(channel::DifferentialA0A1)) else {
+        return Err(anyhow!("Failed to read from ADC"));
+    };
+    let voltage = raw as f64 * 4.069 / 32767.; // 65536.;
+    tracing::debug!("voltage read {}", voltage);
+
+    let target_coax = voltage_to_steps(voltage, voltage_range, pos_range);
+
+    let ref mut target = *target_manual.borrow_mut();
+    let Ok(target_manual_shared) = target_manual_shared.try_read() else {
+        return Ok((target_coax, target.1));
+    };
+
+    *target = (target_coax, target_manual_shared.1);
+    return Ok(*target);
+}
 
 pub fn get_pos_zaber<T: Backend>(
     zaber_conn: Rc<RefCell<ZaberConn<T>>>,

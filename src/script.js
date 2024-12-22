@@ -42,15 +42,13 @@ function handleClickSaveConfig() {
 function handleClickStart() {
     fetch('/start', {
         method: 'POST',
-    })
-        .then(() => handleClickRefresh());
+    });
 }
 
 function handleClickStop() {
     fetch('/stop', {
         method: 'POST',
-    })
-        .then(() => handleClickRefresh());
+    });
 }
 
 function handleMousedownSliderPos(slider) {
@@ -82,34 +80,7 @@ function loadConfig() {
             document.querySelector('#inp-pos-cross').min = x['limit_min_cross'];
             document.querySelector('#inp-pos-cross').max = x['limit_max_cross'];
 
-            if (state === 'Running') {
-                if (backend === 'Tracking') {
-                    document.querySelector('#inp-pos-coax').disabled = true;
-                    document.querySelector('#inp-pos-min-coax').disabled = true;
-                    document.querySelector('#inp-pos-max-coax').disabled = true;
-                    document.querySelector('#inp-pos-target-cross').disabled = true;
-                } else {
-                    document.querySelector('#inp-pos-coax').disabled = false;
-                    document.querySelector('#inp-pos-min-coax').disabled = false;
-                    document.querySelector('#inp-pos-max-coax').disabled = false;
-                    document.querySelector('#inp-pos-target-coax').disabled = false;
-                }
-                document.querySelector('#inp-pos-cross').disabled = false;
-                document.querySelector('#inp-pos-min-cross').disabled = false;
-                document.querySelector('#inp-pos-max-cross').disabled = false;
-                document.querySelector('#inp-pos-target-cross').disabled = false;
-            } else {
-                document.querySelector('#inp-pos-coax').disabled = false;
-                document.querySelector('#inp-pos-min-coax').disabled = false;
-                document.querySelector('#inp-pos-max-coax').disabled = false;
-                document.querySelector('#inp-pos-target-coax').disabled = false;
-                document.querySelector('#inp-pos-cross').disabled = false;
-                document.querySelector('#inp-pos-min-cross').disabled = false;
-                document.querySelector('#inp-pos-max-cross').disabled = false;
-                document.querySelector('#inp-pos-target-cross').disabled = false;
-            }
-
-            const backend = document.querySelector('select[name="backend"]').value;
+            gBackend = document.querySelector('select[name="backend"]').value;
         });
 }
 
@@ -150,7 +121,11 @@ function connectWebsocketManual() {
             document.querySelector('#inp-pos-coax').value = data['position_coax'];
         }
 
-        if (data['control_state'] !== 'Stopped') {
+        document.querySelector('#error').value = data['error']
+
+        const state = data['control_state'];
+        document.querySelector('#control_state').value = state;
+        if (state !== 'Stopped') {
             $btnStart.hidden = true;
             $btnStop.hidden = false;
         } else {
@@ -167,6 +142,33 @@ function connectWebsocketManual() {
             document.querySelector('#inp-pos-actual-cross').classList.add('working');
         } else {
             document.querySelector('#inp-pos-actual-cross').classList.remove('working');
+        }
+
+        if (state === 'Running') {
+            if (gBackend === 'Tracking') {
+                document.querySelector('#inp-pos-coax').disabled = true;
+                document.querySelector('#inp-pos-min-coax').disabled = true;
+                document.querySelector('#inp-pos-max-coax').disabled = true;
+                document.querySelector('#inp-pos-target-cross').disabled = true;
+            } else {
+                document.querySelector('#inp-pos-coax').disabled = false;
+                document.querySelector('#inp-pos-min-coax').disabled = false;
+                document.querySelector('#inp-pos-max-coax').disabled = false;
+                document.querySelector('#inp-pos-target-coax').disabled = false;
+            }
+            document.querySelector('#inp-pos-cross').disabled = false;
+            document.querySelector('#inp-pos-min-cross').disabled = false;
+            document.querySelector('#inp-pos-max-cross').disabled = false;
+            document.querySelector('#inp-pos-target-cross').disabled = false;
+        } else {
+            document.querySelector('#inp-pos-coax').disabled = true;
+            document.querySelector('#inp-pos-min-coax').disabled = true;
+            document.querySelector('#inp-pos-max-coax').disabled = true;
+            document.querySelector('#inp-pos-target-coax').disabled = true;
+            document.querySelector('#inp-pos-cross').disabled = true;
+            document.querySelector('#inp-pos-min-cross').disabled = true;
+            document.querySelector('#inp-pos-max-cross').disabled = true;
+            document.querySelector('#inp-pos-target-cross').disabled = true;
         }
     });
 

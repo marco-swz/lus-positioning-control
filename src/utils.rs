@@ -34,6 +34,7 @@ pub struct Config {
     pub limit_max_cross: u32,
     pub limit_min_cross: u32,
     pub maxspeed_cross: f64,
+    pub mock_zaber: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -41,7 +42,6 @@ pub enum ControlStatus {
     Stopped,
     Running,
     Error,
-    ConfigChange,
 }
 
 impl Display for ControlStatus {
@@ -50,7 +50,6 @@ impl Display for ControlStatus {
             Self::Running => "Running",
             Self::Stopped => "Stopped",
             Self::Error => "Error",
-            Self::ConfigChange => "ConfigChange",
         };
         write!(f, "{}", text)
     }
