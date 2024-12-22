@@ -34,7 +34,7 @@ pub struct WebState {
     pub zaber_state: Arc<RwLock<SharedState>>,
     pub tx_start_control: Sender<()>,
     pub tx_stop_control: Sender<()>,
-    pub target_manual: Arc<RwLock<(f64, f64)>>,
+    pub target_manual: Arc<RwLock<(u32, u32)>>,
     pub config: Arc<RwLock<utils::Config>>,
     pub opcua_state: Arc<sync::RwLock<ServerState>>,
 }
@@ -164,15 +164,15 @@ async fn handle_manual_init(
     ws.on_upgrade(move |socket| handle_manual(socket, state))
 }
 
-fn parse_message(msg: Message) -> Result<(f64, f64)> {
+fn parse_message(msg: Message) -> Result<(u32, u32)> {
     let msg = msg.to_text()?;
     let mut msg = msg.split_whitespace();
 
-    let val_coax = str::parse::<f64>(
+    let val_coax = str::parse::<u32>(
         msg.next()
             .ok_or(anyhow!("Missing value"))?
     )?;
-    let val_cross = str::parse::<f64>(
+    let val_cross = str::parse::<u32>(
         msg.next()
             .ok_or(anyhow!("Missing value"))?
     )?;

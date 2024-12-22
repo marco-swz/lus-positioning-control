@@ -11,7 +11,6 @@ pub type StopChannel = Receiver<()>;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Backend {
     Zaber,
-    Ramp,
     Tracking,
     Manual,
 }
@@ -28,12 +27,12 @@ pub struct Config {
     pub serial_device: String,
     pub opcua_config_path: PathBuf,
     pub backend: Backend,
-    pub limit_max_coax: f64,
-    pub limit_min_coax: f64,
+    pub limit_max_coax: u32,
+    pub limit_min_coax: u32,
     pub maxspeed_coax: f64,
-    pub offset_coax: f64,
-    pub limit_max_cross: f64,
-    pub limit_min_cross: f64,
+    pub offset_coax: i32,
+    pub limit_max_cross: u32,
+    pub limit_min_cross: u32,
     pub maxspeed_cross: f64,
 }
 
@@ -42,6 +41,7 @@ pub enum ControlStatus {
     Stopped,
     Running,
     Error,
+    ConfigChange,
 }
 
 impl Display for ControlStatus {
@@ -50,6 +50,7 @@ impl Display for ControlStatus {
             Self::Running => "Running",
             Self::Stopped => "Stopped",
             Self::Error => "Error",
+            Self::ConfigChange => "ConfigChange",
         };
         write!(f, "{}", text)
     }
@@ -57,10 +58,10 @@ impl Display for ControlStatus {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SharedState {
-    pub target_coax: f64,
-    pub target_cross: f64,
-    pub position_cross: f64,
-    pub position_coax: f64,
+    pub target_coax: u32,
+    pub target_cross: u32,
+    pub position_cross: u32,
+    pub position_coax: u32,
     pub busy_cross: bool,
     pub busy_coax: bool,
     pub control_state: ControlStatus,
@@ -73,7 +74,7 @@ pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
     pub rx_stop: StopChannel,
-    pub target_manual: Arc<RwLock<(f64, f64)>>,
+    pub target_manual: Arc<RwLock<(u32, u32)>>,
     pub config: Arc<RwLock<Config>>,
 }
 

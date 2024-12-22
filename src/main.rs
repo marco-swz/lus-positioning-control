@@ -24,6 +24,7 @@ mod web;
 use web::{run_web_server, WebState};
 
 fn read_config() -> Result<Config> {
+    // TODO(marco): Panic on parse error, default if none found
     match std::fs::read_to_string("config.toml") {
         Ok(config) => {
             tracing::debug!("`config.toml` successfully read");
@@ -46,15 +47,20 @@ fn read_config() -> Result<Config> {
     }
 }
 
-fn test() { 
-      let mut devices = list_devices().unwrap();
+fn test() {
+    let mut devices = list_devices().unwrap();
 
     while let Some(device) = devices.pop() {
         println!("device: {device:?}");
     }
 
-    //let device = libftd2xx::Ft232h::with_description("Single RS232-HS").unwrap();
-    let device: Ft232h = Ftdi::new().unwrap().try_into().unwrap();
+    let device = libftd2xx::Ft232h::with_description("Single RS232-HS").unwrap();
+    //let device: Ft232h = Ftdi::new().unwrap().try_into().unwrap();
+    //let device = ftdi::find_by_vid_pid(0x0403, 0x6010)
+    //    .interface(ftdi::Interface::A)
+    //    .open()
+    //    .unwrap();
+    //dbg!(&device);
 
     let hal = FtHal::init_freq(device, 400_000).unwrap();
     let dev = hal.i2c().unwrap();
@@ -66,20 +72,18 @@ fn test() {
 }
 
 fn main() {
-    test();
-    return;
     tracing_subscriber::fmt::init();
 
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
-    let target_manual = Arc::new(RwLock::new((0., 0.)));
+    let target_manual = Arc::new(RwLock::new((0, 0)));
 
     let shared_state = SharedState {
-        target_coax: 0.,
-        target_cross: 0.,
-        position_cross: 0.,
-        position_coax: 0.,
+        target_coax: 0,
+        target_cross: 0,
+        position_cross: 0,
+        position_coax: 0,
         busy_cross: false,
         busy_coax: false,
         control_state: ControlStatus::Stopped,
@@ -97,14 +101,14 @@ fn main() {
             voltage_max: 8.45,
             serial_device: "/dev/ttyACM0".to_string(),
             opcua_config_path: "opcua_config.conf".into(),
-            backend: Backend::Ramp,
-            limit_max_coax: 64., //steps_to_mm(MAX_POS),
-            limit_min_coax: 0.,
-            limit_max_cross: steps_to_mm(MAX_POS),
-            limit_min_cross: 0.,
+            backend: Backend::Manual,
+            limit_max_coax: MAX_POS,
+            limit_min_coax: 0,
+            limit_max_cross: MAX_POS,
+            limit_min_cross: 0,
             maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
             maxspeed_coax: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-            offset_coax: 0.,
+            offset_coax: 0,
         }))),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),

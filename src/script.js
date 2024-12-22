@@ -1,5 +1,10 @@
+const MICROSTEP_SIZE = 0.49609375; //µm
+const MAX_POS = 201574; // microsteps
 /** @type {?WebSocket} */
 var gSocket = null;
+/** @type {'Tracking' | 'Manual'} */
+var gBackend = 'Tracking';
+
 
 function handleClickTab(type) {
     document.getElementsByClassName('tab active')[0].classList.remove('active');
@@ -9,20 +14,6 @@ function handleClickTab(type) {
     document.querySelector('#' + type).classList.add('visible');
 }
 
-function handleClickRefresh() {
-    fetch('/refresh')
-        .then(x => x.json())
-        .then(x => Object.entries(x)
-            .forEach(function([key, val]) {
-                if (key === "timestamp") {
-                    let [date, time] = val.split('T');
-                    time = time.split('.')[0];
-                    val = date + ' ' + time;
-                }
-                document.querySelector('#' + key).value = val;
-            })
-        );
-}
 
 function handleClickSaveConfig() {
     /** @type {HTMLFormElement} */
@@ -62,7 +53,12 @@ function handleClickStop() {
         .then(() => handleClickRefresh());
 }
 
-function handleMouseupSliderPos() {
+function handleMousedownSliderPos(slider) {
+    document.querySelector(`#inp-pos-target-${slider}`).classList.add('working');
+}
+
+function handleMouseupSliderPos(slider) {
+    document.querySelector(`#inp-pos-target-${slider}`).classList.remove('working');
     console.assert(gSocket != null, 'Websocket not initialized');
     const posParallel = document.querySelector('#inp-pos-coax').value;
     const posCross = document.querySelector('#inp-pos-cross').value;
@@ -73,27 +69,47 @@ function loadConfig() {
     fetch('/config')
         .then(x => x.json())
         .then(x => {
-            Object.entries(x)
-                .forEach(function([key, val]) {
-                    document.querySelector(`[name=${key}]`).value = val;
-                });
+            const state = x['control_state'];
+            document.querySelector('#control_state').value = state;
 
-            const backend = document.querySelector('select[name="backend"]').value;
-            if (backend === 'Manual') {
-                document.querySelector('#inp-pos-coax').disabled = false;
+            document.querySelector('#inp-pos-min-coax').value = steps2mm(x['limit_min_coax']);
+            document.querySelector('#inp-pos-max-coax').value = steps2mm(x['limit_max_coax']);
+            document.querySelector('#inp-pos-coax').min = x['limit_min_coax'];
+            document.querySelector('#inp-pos-coax').max = x['limit_max_coax'];
+
+            document.querySelector('#inp-pos-min-cross').value = steps2mm(x['limit_min_cross']);
+            document.querySelector('#inp-pos-max-cross').value = steps2mm(x['limit_max_cross']);
+            document.querySelector('#inp-pos-cross').min = x['limit_min_cross'];
+            document.querySelector('#inp-pos-cross').max = x['limit_max_cross'];
+
+            if (state === 'Running') {
+                if (backend === 'Tracking') {
+                    document.querySelector('#inp-pos-coax').disabled = true;
+                    document.querySelector('#inp-pos-min-coax').disabled = true;
+                    document.querySelector('#inp-pos-max-coax').disabled = true;
+                    document.querySelector('#inp-pos-target-cross').disabled = true;
+                } else {
+                    document.querySelector('#inp-pos-coax').disabled = false;
+                    document.querySelector('#inp-pos-min-coax').disabled = false;
+                    document.querySelector('#inp-pos-max-coax').disabled = false;
+                    document.querySelector('#inp-pos-target-coax').disabled = false;
+                }
                 document.querySelector('#inp-pos-cross').disabled = false;
-                document.querySelector('#inp-pos-min-coax').disabled = false;
-                document.querySelector('#inp-pos-max-coax').disabled = false;
                 document.querySelector('#inp-pos-min-cross').disabled = false;
                 document.querySelector('#inp-pos-max-cross').disabled = false;
+                document.querySelector('#inp-pos-target-cross').disabled = false;
             } else {
-                document.querySelector('#inp-pos-coax').disabled = true;
-                document.querySelector('#inp-pos-cross').disabled = true;
-                document.querySelector('#inp-pos-min-coax').disabled = true;
-                document.querySelector('#inp-pos-max-coax').disabled = true;
-                document.querySelector('#inp-pos-min-cross').disabled = true;
-                document.querySelector('#inp-pos-max-cross').disabled = true;
+                document.querySelector('#inp-pos-coax').disabled = false;
+                document.querySelector('#inp-pos-min-coax').disabled = false;
+                document.querySelector('#inp-pos-max-coax').disabled = false;
+                document.querySelector('#inp-pos-target-coax').disabled = false;
+                document.querySelector('#inp-pos-cross').disabled = false;
+                document.querySelector('#inp-pos-min-cross').disabled = false;
+                document.querySelector('#inp-pos-max-cross').disabled = false;
+                document.querySelector('#inp-pos-target-cross').disabled = false;
             }
+
+            const backend = document.querySelector('select[name="backend"]').value;
         });
 }
 
@@ -125,20 +141,14 @@ function connectWebsocketManual() {
     let $btnStart = document.querySelector('#btn-start');
     let $btnStop = document.querySelector('#btn-stop');
 
-    // Listen for messages
     gSocket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data);
-        Object.entries(data)
-            .forEach(function([key, val]) {
-                if (key === "timestamp") {
-                    let [date, time] = val.split('T');
-                    time = time.split('.')[0];
-                    val = date + ' ' + time;
-                }
-                document.querySelector('#' + key).value = val;
-            });
-        document.querySelector('#inp-pos-actual-coax').value = data['position_coax'];
-        document.querySelector('#inp-pos-actual-cross').value = data['position_cross'];
+
+        document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position_coax']);
+        document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position_cross']);
+        if (gBackend === 'Tracking') {
+            document.querySelector('#inp-pos-coax').value = data['position_coax'];
+        }
 
         if (data['control_state'] !== 'Stopped') {
             $btnStart.hidden = true;
@@ -146,6 +156,17 @@ function connectWebsocketManual() {
         } else {
             $btnStart.hidden = false;
             $btnStop.hidden = true;
+        }
+
+        if (data['busy_coax']) {
+            document.querySelector('#inp-pos-actual-coax').classList.add('working');
+        } else {
+            document.querySelector('#inp-pos-actual-coax').classList.remove('working');
+        }
+        if (data['busy_cross']) {
+            document.querySelector('#inp-pos-actual-cross').classList.add('working');
+        } else {
+            document.querySelector('#inp-pos-actual-cross').classList.remove('working');
         }
     });
 
@@ -161,7 +182,14 @@ function connectWebsocketManual() {
 
 }
 
-handleClickRefresh();
+function steps2mm(steps) {
+    return steps * MICROSTEP_SIZE / 1000;
+}
+
+function mm2steps(millis) {
+    return millis * 1000. / MICROSTEP_SIZE;
+}
+
 loadConfig();
 loadOpcua();
 connectWebsocketManual();
@@ -169,11 +197,11 @@ connectWebsocketManual();
 document.addEventListener('DOMContentLoaded', () => {
     const $inpTargetCoax = document.querySelector('#inp-pos-target-coax');
     document.querySelector('#inp-pos-coax').addEventListener('input', (e) => {
-        $inpTargetCoax.value = e.currentTarget.value;
+        $inpTargetCoax.value = steps2mm(e.currentTarget.value);
     })
 
     const $inpTargetCross = document.querySelector('#inp-pos-target-cross');
     document.querySelector('#inp-pos-cross').addEventListener('input', (e) => {
-        $inpTargetCross.value = e.currentTarget.value;
+        $inpTargetCross.value = steps2mm(e.currentTarget.value);
     })
 });

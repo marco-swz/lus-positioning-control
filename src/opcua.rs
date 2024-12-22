@@ -5,6 +5,7 @@ use opcua::server::state::ServerState;
 use opcua::{server::prelude::*, sync::RwLock};
 
 use crate::utils::StateChannel;
+use crate::zaber::steps_to_mm;
 
 fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
     let address_space = server.address_space();
@@ -73,7 +74,7 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
         let mut address_space = address_space.write();
         let _ = address_space.set_variable_value(
             node_position_coax.clone(),
-            zaber_state.position_coax,
+            steps_to_mm(zaber_state.position_coax),
             &now,
             &now,
         );
@@ -85,7 +86,7 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
         );
         let _ = address_space.set_variable_value(
             node_position_cross.clone(),
-            zaber_state.position_cross,
+            steps_to_mm(zaber_state.position_cross),
             &now,
             &now,
         );

@@ -2,69 +2,71 @@
     <input id="ui-status" value="disconnected" disabled />
     <div id="tabs">
         <div id="tab-control" class="tab active" onclick="handleClickTab('control')">Control</div>
-        <div id="tab-manual" class="tab" onclick="handleClickTab('manual')">Manual</div>
         <div id="tab-config" class="tab" onclick="handleClickTab('config')">Configuration</div>
         <div id="tab-opcua" class="tab" onclick="handleClickTab('opcua')">OPC-UA</div>
     </div>
     <div id="control" class="content visible">
-        <div class="grid">
-            <span>Status</span>
-            <input id="control_state" disabled />
-            <span>Voltage</span>
-            <input id="voltage_gleeble" disabled />
-            <span>Position Parallel</span>
-            <input id="position_coax" disabled />
-            <span>Busy Parallel</span>
-            <input id="busy_coax" disabled />
-            <span>Position Cross</span>
-            <input id="position_cross" disabled />
-            <span>Busy Cross</span>
-            <input id="busy_cross" disabled />
-            <span>Error</span>
-            <input id="error" disabled />
-            <span>Last Change</span>
-            <input id="timestamp" disabled />
+        <div id="cont-ctrl-top">
+            <div id="cont-config">
+                <div class="grid">
+                    <span>Status</span>
+                    <input id="control_state" disabled />
+                    <label>Mode</label>
+                    <select name="backend">
+                        <option value="Manual">Manual</option>
+                        <option value="Tracking">Tracking</option>
+                    </select>
+                    <span>Error</span>
+                    <input id="error" disabled />
+                </div>
+                <button id="btn-start" class="success" onclick="handleClickStart()">Start</button>
+                <button id="btn-stop" class="danger" onclick="handleClickStop()" hidden>Stop</button>
+            </div>
+            <div id="cont-slider-cross">
+                <input id="inp-pos-cross" type="range" orient="vertical" min="0" max="201574" 
+                    onmousedown="handleMousedownSliderPos('cross')"
+                    onmouseup="handleMouseupSliderPos('cross')"
+                    disabled
+                />
+                <div id="cont-slider-cross-fields">
+                    <input id="inp-pos-min-cross" onchange="requireRestart()" />
+                    <div>
+                        <div class="cont-pos">
+                            <label for="inp-pos-target-cross">Target</label>
+                            <input id="inp-pos-target-cross" disabled />
+                        </div>
+                        <div class="cont-pos">
+                            <label for="inp-pos-actual-cross">Actual</label>
+                            <input id="inp-pos-actual-cross" disabled />
+                        </div>
+                    </div>
+                    <input id="inp-pos-max-cross" onchange="requireRestart()" />
+                </div>
+            </div>
         </div>
-        <button id="btn-start" class="success" onclick="handleClickStart()">Start</button>
-        <button id="btn-stop" class="danger" onclick="handleClickStop()" hidden>Stop</button>
-    </div>
-    <div id="Manual" class="content">
-        <fieldset>
-            <legend>Parallel Axis</legend>
-            <div class="grid">
-                <label for="inp-pos-target-coax">Target Position [mm]</label>
-                <input id="inp-pos-target-coax" disabled />
-                <label for="inp-pos-actual-coax">Actual Position [mm]</label>
-                <input id="inp-pos-actual-coax" disabled />
-            </div>
-            <div class="cont-slider-pos">
-                <div class="cont-min-max">
-                    <input id="inp-pos-min-coax" type="number" value="0"
-                        onchange="document.querySelector('#inp-pos-coax').min = this.value" />
-                    <input id="inp-pos-max-coax" type="number" value="100"
-                        onchange="document.querySelector('#inp-pos-coax').max = this.value" />
+        <div id="cont-ctrl-bottom">
+            <div id="cont-slider-coax">
+                <input id="inp-pos-coax" type="range" min="0" max="201574" 
+                    onmousedown="handleMousedownSliderPos('coax')"
+                    onmouseup="handleMouseupSliderPos('coax')"
+                    disabled
+                />
+                <div id="cont-slider-coax-fields">
+                    <input id="inp-pos-min-coax" onchange="requireRestart()" />
+                    <div>
+                        <div class="cont-pos">
+                            <input id="inp-pos-target-coax" disabled />
+                            <label for="inp-pos-target-coax">Target</label>
+                        </div>
+                        <div class="cont-pos">
+                            <input id="inp-pos-actual-coax" disabled />
+                            <label for="inp-pos-actual-coax">Actual</label>
+                        </div>
+                    </div>
+                    <input id="inp-pos-max-coax" onchange="requireRestart()" />
                 </div>
-                <input id="inp-pos-coax" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos()" />
             </div>
-        </fieldset>
-        <fieldset>
-            <legend>Cross Axis</legend>
-            <div class="grid">
-                <label for="inp-pos-target-cross">Target Position [mm]</label>
-                <input id="inp-pos-target-cross" disabled />
-                <label for="inp-pos-actual-cross">Actual Position [mm]</label>
-                <input id="inp-pos-actual-cross" disabled />
-            </div>
-            <div class="cont-slider-pos">
-                <div class="cont-min-max">
-                    <input id="inp-pos-min-cross" type="number" value="0"
-                        onchange="document.querySelector('#inp-pos-cross').min = this.value" />
-                    <input id="inp-pos-max-cross" type="number" value="100"
-                        onchange="document.querySelector('#inp-pos-cross').max = this.value" />
-                </div>
-                <input id="inp-pos-cross" type="range" min="0" max="100" onmouseup="handleMouseupSliderPos()" />
-            </div>
-        </fieldset>
+        </div>
     </div>
     <div id="config" class="content">
         <form id="form-config" action="/config" method="post">
@@ -77,13 +79,6 @@
                 <input name="restart_timeout" value="" required />
                 <label>OPC-UA Config Path</label>
                 <input name="opcua_config_path" value="" required />
-                <label>Backend</label>
-                <select name="backend">
-                    <option value="Zaber">Zaber</option>
-                    <option value="Manual">Manual</option>
-                    <option value="Tracking">Tracking</option>
-                    <option value="Ramp">Ramp</option>
-                </select>
             </div>
             <fieldset class="grid">
                 <legend>Parallel Axis</legend>

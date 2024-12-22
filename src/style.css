@@ -15,7 +15,8 @@
     --clr-accent: forestgreen;
 }
 
-input, select {
+input,
+select {
     accent-color: var(--clr-accent);
     border: 1px solid darkgrey;
     border-radius: 4px;
@@ -58,10 +59,6 @@ select {
     display: none;
     padding: 20px 10px;
     border-top: 1px solid darkgrey;
-}
-
-#control input {
-    color: black;
 }
 
 .grid {
@@ -107,22 +104,68 @@ form {
     color: red;
 }
 
-.cont-slider-pos {
+#cont-ctrl-top {
     display: flex;
-    flex-direction: column;
-    margin-top: 15px;
+    height: 500px;
+    justify-content: space-between;
 
-    & .cont-min-max {
+    & #cont-slider-cross {
         display: flex;
-        justify-content: space-between;
-    }
 
-    & input[type=number] {
-        width: 75px;
-    }
+        & #cont-slider-cross-fields {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
 
+            .cont-pos {
+                display: flex;
+                flex-direction: column;
+            }
+
+            & input {
+                color: black;
+                width: 50px;
+            }
+
+            & input.working {
+                color: grey;
+            }
+        }
+    }
+}
+
+#cont-ctrl-bottom {
     & input[type=range] {
-        width: 100%;
+        width: 500px;
+    }
+
+    & #cont-slider-coax {
+        display: flex;
+        flex-direction: column;
+
+        & #cont-slider-coax-fields {
+            display: flex;
+            justify-content: space-between;
+
+            & > div {
+                display: flex;
+                gap: 10px;
+            }
+
+            .cont-pos {
+                display: flex;
+                flex-direction: column;
+            }
+
+            & input {
+                color: black;
+                width: 50px;
+            }
+
+            & input.working {
+                color: grey;
+            }
+        }
     }
 }
 

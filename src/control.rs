@@ -1,8 +1,9 @@
-use crate::utils::{Backend, ControlStatus, ExecState};
+use crate::{
+    utils::{Backend, ControlStatus, ExecState},
+    zaber::init_zaber,
+};
 use anyhow::Result;
 use chrono::Local;
-
-use crate::{ramp::init_ramp, zaber::init_zaber};
 
 pub fn init(state: &mut ExecState) -> Result<()> {
     let backend = { state.config.read().unwrap().backend.clone() };
@@ -15,17 +16,16 @@ pub fn init(state: &mut ExecState) -> Result<()> {
 
     tracing::debug!("Init control with backend {:?}", &backend);
     return match backend {
-        Backend::Ramp => init_ramp(state),
         Backend::Zaber | Backend::Manual | Backend::Tracking => init_zaber(state),
     };
 }
 
 pub fn run(
     state: &mut ExecState,
-    mut get_target: impl FnMut() -> Result<(f64, f64)>,
-    mut get_pos: impl FnMut() -> Result<(f64, f64, bool, bool)>,
-    mut move_coax: impl FnMut(f64) -> Result<()>,
-    mut move_cross: impl FnMut(f64) -> Result<()>,
+    mut get_target: impl FnMut() -> Result<(u32, u32)>,
+    mut get_pos: impl FnMut() -> Result<(u32, u32, bool, bool)>,
+    mut move_coax: impl FnMut(u32) -> Result<()>,
+    mut move_cross: impl FnMut(u32) -> Result<()>,
 ) -> Result<()> {
     state.shared.control_state = ControlStatus::Running;
 
