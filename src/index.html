@@ -9,7 +9,7 @@
         <div id="cont-ctrl-top">
             <div id="cont-config">
                 <div class="grid">
-                    <span>Status</span>
+                    <label>Status</label>
                     <input id="control_state" disabled />
                     <label>Mode</label>
                     <select name="control_mode" onchange="handleChangeMode.bind(this)()">
@@ -18,6 +18,8 @@
                     </select>
                     <span>Error</span>
                     <input id="error" disabled />
+                    <label>Voltage</label>
+                    <input id="inp-voltage" disabled />
                 </div>
                 <button id="btn-start" class="success" onclick="handleClickStart()">Start</button>
                 <button id="btn-stop" class="danger" onclick="handleClickStop()" hidden>Stop</button>

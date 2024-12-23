@@ -22,7 +22,7 @@ pub fn init(state: &mut ExecState) -> Result<()> {
 
 pub fn run(
     state: &mut ExecState,
-    mut get_target: impl FnMut() -> Result<(u32, u32)>,
+    mut get_target: impl FnMut() -> Result<(u32, u32, f64)>,
     mut get_pos: impl FnMut() -> Result<(u32, u32, bool, bool)>,
     mut move_coax: impl FnMut(u32) -> Result<()>,
     mut move_cross: impl FnMut(u32) -> Result<()>,
@@ -35,7 +35,7 @@ pub fn run(
 
     tracing::info!("Starting control loop");
     loop {
-        let (target_coax, target_cross) = get_target()?;
+        let (target_coax, target_cross, voltage) = get_target()?;
         tracing::debug!("target coax: {target_coax}");
         state.shared.target_coax = target_coax;
         state.shared.target_cross = target_coax;
@@ -45,6 +45,7 @@ pub fn run(
         state.shared.position_cross = pos_cross;
         state.shared.busy_coax = busy_coax;
         state.shared.busy_cross = busy_cross;
+        state.shared.voltage = voltage;
         state.shared.timestamp = Local::now();
 
         tracing::debug!("Position coax: target={target_coax} actual={pos_coax}");

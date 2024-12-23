@@ -22,9 +22,19 @@ function handleClickSaveConfig() {
         return;
     }
 
+    let data = Object.fromEntries(new FormData($form));
+    for (let [key, val] of Object.entries(data)) {
+        if (['limit_max_coax', 'limit_min_coax', 'limit_min_cross', 'limit_max_cross'].includes(key)) {
+            val = mm2steps(val);
+        }
+        data[key] = val;
+    }
+    data['control_mode'] = gControlMode;
+    data['mock_zaber'] = false;
+
     fetch('/config', {
         method: 'POST',
-        body: new URLSearchParams(new FormData($form)),
+        body: new URLSearchParams(data),
         headers: {
             "Content-Type": "application/x-www-form-urlencoded",
         },
@@ -85,7 +95,6 @@ function loadConfig() {
                     val = steps2mm(val);
                 }
 
-                console.log(key, val);
                 const $inp = document.querySelector(`[name="${key}"]`);
                 if ($inp != null) {
                     $inp.value = val;
@@ -137,6 +146,7 @@ function connectWebsocketManual() {
         const data = JSON.parse(event.data);
         const state = data['control_state'];
 
+        document.querySelector('#inp-voltage').value = data['voltage'];
         document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position_coax']);
         document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position_cross']);
         if (state !== "Running" || gControlMode === 'Tracking') {
@@ -144,6 +154,10 @@ function connectWebsocketManual() {
         }
         if (state !== "Running") {
             document.querySelector('#inp-pos-cross').value = data['position_cross'];
+        }
+        
+        if (gControlMode === 'Tracking') {
+            document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target_coax']);
         }
 
         document.querySelector('#error').value = data['error']
@@ -212,7 +226,7 @@ function steps2mm(steps) {
 }
 
 function mm2steps(millis) {
-    return millis * 1000. / MICROSTEP_SIZE;
+    return Math.round(millis * 1000. / MICROSTEP_SIZE);
 }
 
 loadConfig();

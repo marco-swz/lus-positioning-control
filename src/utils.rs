@@ -61,6 +61,7 @@ pub struct SharedState {
     pub target_cross: u32,
     pub position_cross: u32,
     pub position_coax: u32,
+    pub voltage: f64,
     pub busy_cross: bool,
     pub busy_coax: bool,
     pub control_state: ControlStatus,
@@ -73,7 +74,7 @@ pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
     pub rx_stop: StopChannel,
-    pub target_manual: Arc<RwLock<(u32, u32)>>,
+    pub target_manual: Arc<RwLock<(u32, u32, f64)>>,
     pub config: Arc<RwLock<Config>>,
 }
 

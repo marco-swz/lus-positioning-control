@@ -49,7 +49,7 @@ fn main() {
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
-    let target_manual = Arc::new(RwLock::new((0, 0)));
+    let target_manual = Arc::new(RwLock::new((0, 0, 0.)));
 
     let shared_state = SharedState {
         target_coax: 0,
@@ -61,6 +61,7 @@ fn main() {
         control_state: ControlStatus::Stopped,
         error: None,
         timestamp: Local::now(),
+        voltage: 0.,
     };
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 

@@ -35,7 +35,7 @@ pub struct WebState {
     pub zaber_state: Arc<RwLock<SharedState>>,
     pub tx_start_control: Sender<()>,
     pub tx_stop_control: Sender<()>,
-    pub target_manual: Arc<RwLock<(u32, u32)>>,
+    pub target_manual: Arc<RwLock<(u32, u32, f64)>>,
     pub config: Arc<RwLock<utils::Config>>,
     pub opcua_state: Arc<sync::RwLock<ServerState>>,
 }
@@ -224,7 +224,7 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
             {
                 match state.target_manual.write() {
                     Err(e) => tracing::error!("Failed to aquire manual voltage lock: {e}"),
-                    Ok(mut v) => *v = (val_coax, val_cross),
+                    Ok(mut v) => *v = (val_coax, val_cross, 0.),
                 };
             }
         }

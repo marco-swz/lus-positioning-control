@@ -146,7 +146,7 @@ fn init_backend<T: Backend>(
             s.clone()
         };
         let target_shared = Arc::clone(&state.target_manual);
-        let target = Rc::new(RefCell::new((0, 0)));
+        let target = Rc::new(RefCell::new((0, 0, 0.)));
 
         let result = match config.control_mode {
             utils::ControlMode::Manual => {
@@ -208,19 +208,20 @@ pub fn get_target_zaber<T: Backend>(
     zaber_conn: Rc<RefCell<ZaberConn<T>>>,
     voltage_range: (f64, f64),
     pos_range: (u32, u32),
-) -> Result<(u32, u32)> {
+) -> Result<(u32, u32, f64)> {
     let cmd = format!("io get ai 1");
     let reply = zaber_conn.borrow_mut().command_reply((2, cmd))?.flag_ok()?;
-    let target_coax = voltage_to_steps(reply.data().parse()?, voltage_range, pos_range);
+    let voltage = reply.data().parse()?;
+    let target_coax = voltage_to_steps(voltage, voltage_range, pos_range);
     // TODO(marco): Set target for cross axis
     let target_cross = 0;
-    return Ok((target_coax, target_cross));
+    return Ok((target_coax, target_cross, voltage));
 }
 
 fn get_target_manual(
-    target: Rc<RefCell<(u32, u32)>>,
-    target_shared: Arc<RwLock<(u32, u32)>>,
-) -> Result<(u32, u32)> {
+    target: Rc<RefCell<(u32, u32, f64)>>,
+    target_shared: Arc<RwLock<(u32, u32, f64)>>,
+) -> Result<(u32, u32, f64)> {
     let ref mut target = *target.borrow_mut();
     let Ok(shared) = target_shared.try_read() else {
         return Ok(*target);
@@ -232,11 +233,11 @@ fn get_target_manual(
 
 fn get_target_tracking(
     adc: Rc<RefCell<Adc>>,
-    target_manual: Rc<RefCell<(u32, u32)>>,
-    target_manual_shared: Arc<RwLock<(u32, u32)>>,
+    target_manual: Rc<RefCell<(u32, u32, f64)>>,
+    target_manual_shared: Arc<RwLock<(u32, u32, f64)>>,
     voltage_range: (f64, f64),
     pos_range: (u32, u32),
-) -> Result<(u32, u32)> {
+) -> Result<(u32, u32, f64)> {
     let ref mut adc = *adc.borrow_mut();
     let Ok(raw) = block!(adc.read(channel::DifferentialA0A1)) else {
         return Err(anyhow!("Failed to read from ADC"));
@@ -248,10 +249,10 @@ fn get_target_tracking(
 
     let ref mut target = *target_manual.borrow_mut();
     let Ok(target_manual_shared) = target_manual_shared.try_read() else {
-        return Ok((target_coax, target.1));
+        return Ok((target_coax, target.1, voltage));
     };
 
-    *target = (target_coax, target_manual_shared.1);
+    *target = (target_coax, target_manual_shared.1, voltage);
     return Ok(*target);
 }
 
