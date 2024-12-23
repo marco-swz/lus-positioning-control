@@ -1,12 +1,12 @@
 use crate::{
-    utils::{Backend, ControlStatus, ExecState},
+    utils::{ControlMode, ControlStatus, ExecState},
     zaber::init_zaber,
 };
 use anyhow::Result;
 use chrono::Local;
 
 pub fn init(state: &mut ExecState) -> Result<()> {
-    let backend = { state.config.read().unwrap().backend.clone() };
+    let backend = { state.config.read().unwrap().control_mode.clone() };
 
     state.shared.error = None;
     if let Ok(mut out) = state.out_channel.try_write() {
@@ -16,7 +16,7 @@ pub fn init(state: &mut ExecState) -> Result<()> {
 
     tracing::debug!("Init control with backend {:?}", &backend);
     return match backend {
-        Backend::Zaber | Backend::Manual | Backend::Tracking => init_zaber(state),
+        ControlMode::Zaber | ControlMode::Manual | ControlMode::Tracking => init_zaber(state),
     };
 }
 

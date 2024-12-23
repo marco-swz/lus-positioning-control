@@ -14,7 +14,7 @@ mod opcua;
 use opcua::run_opcua;
 
 mod utils;
-use utils::{Backend, Config, ControlStatus, ExecState, SharedState};
+use utils::{ControlMode, Config, ControlStatus, ExecState, SharedState};
 
 mod web;
 use web::{run_web_server, WebState};
@@ -73,7 +73,7 @@ fn main() {
             voltage_max: 8.45,
             serial_device: "/dev/ttyACM0".to_string(),
             opcua_config_path: "opcua_config.conf".into(),
-            backend: Backend::Manual,
+            control_mode: ControlMode::Manual,
             limit_max_coax: MAX_POS,
             limit_min_coax: 0,
             limit_max_cross: MAX_POS,

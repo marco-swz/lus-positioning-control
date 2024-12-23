@@ -9,7 +9,7 @@ pub type StateChannel = Arc<RwLock<SharedState>>;
 pub type StopChannel = Receiver<()>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum Backend {
+pub enum ControlMode {
     Zaber,
     Tracking,
     Manual,
@@ -26,7 +26,7 @@ pub struct Config {
     pub voltage_max: f64,
     pub serial_device: String,
     pub opcua_config_path: PathBuf,
-    pub backend: Backend,
+    pub control_mode: ControlMode,
     pub limit_max_coax: u32,
     pub limit_min_coax: u32,
     pub maxspeed_coax: f64,

@@ -12,7 +12,7 @@
                     <span>Status</span>
                     <input id="control_state" disabled />
                     <label>Mode</label>
-                    <select name="backend">
+                    <select name="control_mode" onchange="handleChangeMode.bind(this)()">
                         <option value="Manual">Manual</option>
                         <option value="Tracking">Tracking</option>
                     </select>
@@ -29,7 +29,7 @@
                     disabled
                 />
                 <div id="cont-slider-cross-fields">
-                    <input id="inp-pos-min-cross" onchange="requireRestart()" />
+                    <input id="inp-pos-min-cross" disabled/>
                     <div>
                         <div class="cont-pos">
                             <label for="inp-pos-target-cross">Target</label>
@@ -40,7 +40,7 @@
                             <input id="inp-pos-actual-cross" disabled />
                         </div>
                     </div>
-                    <input id="inp-pos-max-cross" onchange="requireRestart()" />
+                    <input id="inp-pos-max-cross" disabled/>
                 </div>
             </div>
         </div>
@@ -52,7 +52,7 @@
                     disabled
                 />
                 <div id="cont-slider-coax-fields">
-                    <input id="inp-pos-min-coax" onchange="requireRestart()" />
+                    <input id="inp-pos-min-coax" disabled/>
                     <div>
                         <div class="cont-pos">
                             <input id="inp-pos-target-coax" disabled />
@@ -63,7 +63,7 @@
                             <label for="inp-pos-actual-coax">Actual</label>
                         </div>
                     </div>
-                    <input id="inp-pos-max-coax" onchange="requireRestart()" />
+                    <input id="inp-pos-max-coax" disabled/>
                 </div>
             </div>
         </div>
@@ -104,7 +104,7 @@
                 <label>Max. Speed [mm/s]</label>
                 <input name="maxspeed_cross" value="" required />
             </fieldset>
-            <button type="button" onclick="handleClickSaveConfig()">Save</button>
+            <button type="button" onclick="handleClickSaveConfig()">Restart</button>
         </form>
     </div>
     <div id="opcua" class="content">

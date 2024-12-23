@@ -114,13 +114,13 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
                 }
                 .unwrap()
             });
-        return init_backend(port, state, config);
+        return init_backend(port, state);
     }
 
     return match Port::open_serial(&config.serial_device) {
         Ok(zaber_conn) => {
             let zaber_conn = init_axes(zaber_conn, &config)?;
-            return init_backend(zaber_conn, state, config);
+            return init_backend(zaber_conn, state);
         }
         Err(e) => Err(anyhow!(
             "Failed to open Zaber serial port '{}': {}",
@@ -133,7 +133,6 @@ pub fn init_zaber(state: &mut ExecState) -> Result<()> {
 fn init_backend<T: Backend>(
     zaber_conn: ZaberConn<T>,
     state: &mut ExecState,
-    config: Config,
 ) -> Result<()> {
     let zaber_conn = Rc::new(RefCell::new(zaber_conn));
 
@@ -141,23 +140,23 @@ fn init_backend<T: Backend>(
     let move_coax = |pos| move_coax_zaber(Rc::clone(&zaber_conn), pos);
     let move_cross = |pos| move_cross_zaber(Rc::clone(&zaber_conn), pos);
 
-    let target_shared = Arc::clone(&state.target_manual);
-    let target = Rc::new(RefCell::new((0, 0)));
-
-    let config_old = config.clone();
     loop {
-        let result = match config.backend {
-            utils::Backend::Manual => {
-                // TODO(marco): Is this extra clone really necessary?
-                let target_clone = Rc::clone(&target);
-                let target_shared_clone = Arc::clone(&target_shared);
+        let config = {
+            let s = state.config.read().unwrap();
+            s.clone()
+        };
+        let target_shared = Arc::clone(&state.target_manual);
+        let target = Rc::new(RefCell::new((0, 0)));
+
+        let result = match config.control_mode {
+            utils::ControlMode::Manual => {
                 let get_target = move || {
-                    get_target_manual(Rc::clone(&target_clone), Arc::clone(&target_shared_clone))
+                    get_target_manual(Rc::clone(&target), Arc::clone(&target_shared))
                 };
                 run(state, get_target, get_pos, move_coax, move_cross)
             }
 
-            utils::Backend::Tracking => {
+            utils::ControlMode::Tracking => {
                 let Ok(device) = libftd2xx::Ft232h::with_description("Single RS232-HS") else {
                     return Err(anyhow!("Failed to open Ft232h"));
                 };
@@ -180,10 +179,10 @@ fn init_backend<T: Backend>(
                         (config.limit_min_coax, config.limit_max_coax),
                     )
                 };
-                return run(state, get_target, get_pos, move_coax, move_cross);
+                run(state, get_target, get_pos, move_coax, move_cross)
             }
 
-            utils::Backend::Zaber => {
+            utils::ControlMode::Zaber => {
                 let get_voltage = || {
                     get_target_zaber(
                         Rc::clone(&zaber_conn),
@@ -195,10 +194,11 @@ fn init_backend<T: Backend>(
             }
         };
 
-        // If only the backend changes,
+        // If only the control mode changes,
         // zaber does not need to re-initalized.
-        let config = state.config.read().unwrap();
-        if config_old.backend == config.backend {
+        let config_current = state.config.read().unwrap();
+        tracing::debug!("checking control mode: old={:?}, new={:?}", config.control_mode, config_current.control_mode);
+        if config.control_mode == config_current.control_mode {
             return result;
         };
     }

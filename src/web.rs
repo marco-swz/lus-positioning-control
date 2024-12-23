@@ -9,6 +9,7 @@ use axum::{
     extract::{
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
+        self,
     },
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -23,7 +24,7 @@ use opcua::{
 };
 use serde_json;
 
-use crate::utils::{self, SharedState};
+use crate::utils::{self, ControlMode, SharedState};
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("script.js");
@@ -66,11 +67,8 @@ async fn handle_refresh(State(state): State<WebState>) -> Json<SharedState> {
     return state;
 }
 
-async fn handle_post_config(State(state): State<WebState>, Form(config_new): Form<utils::Config>) {
-    tracing::debug!("POST /config requested");
-    let _ = state.tx_stop_control.try_send(());
-
-    let save_result = match toml::to_string_pretty(&config_new) {
+fn save_config(config_new: &utils::Config) -> Result<()> {
+    return match toml::to_string_pretty(&config_new) {
         Ok(config) => {
             match std::fs::OpenOptions::new()
                 .write(true)
@@ -99,6 +97,29 @@ async fn handle_post_config(State(state): State<WebState>, Form(config_new): For
             Err(anyhow!("error serializing new config: {e}"))
         }
     };
+
+}
+
+async fn handle_post_mode(extract::Path(new_mode): extract::Path<ControlMode>, State(state): State<WebState>) {
+    tracing::debug!("POST mode requested - new mode: {:?}", new_mode);
+    let mut config_new = state.config.read().unwrap().clone();
+    config_new.control_mode = new_mode.clone();
+
+    save_config(&config_new).unwrap();
+    {
+        state.config.write().unwrap().control_mode = new_mode;
+    }
+
+    let _ = state.tx_stop_control.try_send(());
+    tracing::debug!("POST mode exit");
+}
+
+
+async fn handle_post_config(State(state): State<WebState>, Form(config_new): Form<utils::Config>) {
+    tracing::debug!("POST /config requested");
+    let _ = state.tx_stop_control.try_send(());
+
+    let save_result = save_config(&config_new);
 
     let mut config = state.config.write().unwrap();
     *config = config_new;
@@ -260,6 +281,8 @@ pub fn run_web_server(state: WebState) {
         .route("/stop", post(handle_post_stop))
         .with_state(state.clone())
         .route("/config", get(handle_get_config))
+        .with_state(state.clone())
+        .route("/mode/:m", post(handle_post_mode))
         .with_state(state.clone())
         .route("/ws", get(handle_manual_init))
         .with_state(state);
