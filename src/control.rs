@@ -36,7 +36,6 @@ pub fn run(
     tracing::info!("Starting control loop");
     loop {
         let (target_coax, target_cross, voltage) = get_target()?;
-        tracing::debug!("target coax: {target_coax}");
         state.shared.target_coax = target_coax;
         state.shared.target_cross = target_coax;
 

@@ -4,6 +4,8 @@ const MAX_POS = 201574; // microsteps
 var gSocket = null;
 /** @type {'Tracking' | 'Manual'} */
 var gControlMode = 'Tracking';
+/** @type {string} */
+var gErrorMessage = '';
 
 
 function handleClickTab(type) {
@@ -67,10 +69,21 @@ function handleMousedownSliderPos(slider) {
 
 function handleMouseupSliderPos(slider) {
     document.querySelector(`#inp-pos-target-${slider}`).classList.remove('working');
+    sendTargetPosition();
+}
+
+function handleChangeTarget(axis) {
+    let $inp = document.querySelector(`#inp-pos-${axis}`);
+    $inp.value = mm2steps(this.value);
+    this.value = steps2mm($inp.value);
+    sendTargetPosition();
+}
+
+function sendTargetPosition() {
     console.assert(gSocket != null, 'Websocket not initialized');
-    const posParallel = document.querySelector('#inp-pos-coax').value;
-    const posCross = document.querySelector('#inp-pos-cross').value;
-    gSocket.send(posParallel + ' ' + posCross);
+    const posCoax = document.querySelector('#inp-pos-coax').value
+    const posCross = document.querySelector('#inp-pos-cross').value
+    gSocket.send(posCoax + ' ' + posCross);
 }
 
 function loadConfig() {
@@ -102,6 +115,7 @@ function loadConfig() {
             }
 
             gControlMode = document.querySelector('select[name="control_mode"]').value;
+            document.querySelector('#btn-change-mode').style.visibility = 'hidden';
         });
 }
 
@@ -129,7 +143,15 @@ function loadOpcua() {
 }
 
 function handleChangeMode() {
-    const mode = this.value;
+    if (gControlMode !== this.value) {
+        document.querySelector('#btn-change-mode').style.visibility = null;
+    } else {
+        document.querySelector('#btn-change-mode').style.visibility = 'hidden';
+    }
+}
+
+function handleClickChangeMode() {
+    const mode = document.querySelector('[name=control_mode]').value;
     fetch('/mode/' + mode, {
         method: 'POST',
     });
@@ -160,7 +182,13 @@ function connectWebsocketManual() {
             document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target_coax']);
         }
 
-        document.querySelector('#error').value = data['error']
+        gErrorMessage = data['error'];
+
+        if (state === 'Error') {
+            document.querySelector('#btn-show-error').style.visibility = 'visible';
+        } else {
+            document.querySelector('#btn-show-error').style.visibility = 'hidden';
+        }
 
         document.querySelector('#control_state').value = state;
         if (state !== 'Stopped') {
@@ -235,12 +263,14 @@ connectWebsocketManual();
 
 document.addEventListener('DOMContentLoaded', () => {
     const $inpTargetCoax = document.querySelector('#inp-pos-target-coax');
-    document.querySelector('#inp-pos-coax').addEventListener('input', (e) => {
+    const $sliderTargetCoax = document.querySelector('#inp-pos-coax');
+    $sliderTargetCoax.addEventListener('input', (e) => {
         $inpTargetCoax.value = steps2mm(e.currentTarget.value);
     })
 
     const $inpTargetCross = document.querySelector('#inp-pos-target-cross');
-    document.querySelector('#inp-pos-cross').addEventListener('input', (e) => {
+    const $sliderTargetCross = document.querySelector('#inp-pos-cross');
+    $sliderTargetCross.addEventListener('input', (e) => {
         $inpTargetCross.value = steps2mm(e.currentTarget.value);
     })
 });

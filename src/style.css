@@ -31,13 +31,17 @@ button {
     border-radius: 4px;
     border: 0;
     outline: none;
-    margin-top: 20px;
     width: 75px;
     font-weight: 500;
 }
 
 button:hover {
     background-color: hsl(from var(--clr-accent) h s calc(l + 10));
+}
+
+.slim {
+    padding: 5px 7px;
+    height: fit-content;
 }
 
 select {
@@ -55,7 +59,7 @@ select {
 }
 
 .content {
-    width: 500px;
+    width: 600px;
     display: none;
     padding: 20px 10px;
     border-top: 1px solid darkgrey;
@@ -65,6 +69,13 @@ select {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: 7px 20px;
+}
+
+.grid3 {
+    display: grid;
+    grid-template-columns: max-content 1fr 1fr;
+    gap: 10px 20px;
+    align-items: center;
 }
 
 .visible {
@@ -104,9 +115,17 @@ form {
     color: red;
 }
 
+#control_state[value="Error"] {
+    color: red;
+}
+
+#btn-start, #btn-stop {
+    margin-top: 20px;
+}
+
 #cont-ctrl-top {
     display: flex;
-    height: 500px;
+    height: 300px;
     justify-content: space-between;
 
     & #cont-slider-cross {
@@ -135,8 +154,10 @@ form {
 }
 
 #cont-ctrl-bottom {
+    width: 510px;
+
     & input[type=range] {
-        width: 500px;
+        width: 100%;
     }
 
     & #cont-slider-coax {
@@ -160,6 +181,7 @@ form {
             & input {
                 color: black;
                 width: 50px;
+                height: fit-content;
             }
 
             & input.working {
