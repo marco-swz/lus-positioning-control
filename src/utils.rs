@@ -10,7 +10,6 @@ pub type StopChannel = Receiver<()>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ControlMode {
-    Zaber,
     Tracking,
     Manual,
 }

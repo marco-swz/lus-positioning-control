@@ -1,12 +1,40 @@
+use std::sync::Arc;
+
 use crate::{
-    utils::{ControlMode, ControlStatus, ExecState},
-    zaber::init_zaber,
+    utils::{self, ControlStatus, ExecState},
+    zaber::{init_zaber, init_zaber_mock, Adc, ManualBackend, TrackingBackend, ZaberConn},
 };
-use anyhow::Result;
+use ads1x1x::{Ads1x1x, FullScaleRange, TargetAddr};
+use anyhow::{Result, anyhow};
 use chrono::Local;
+use ftdi_embedded_hal::{libftd2xx, FtHal};
+
+pub trait Backend {
+    fn get_target(&mut self) -> Result<(u32, u32, f64)>;
+    fn get_pos(&mut self) -> Result<(u32, u32, bool, bool)>;
+    fn move_coax(&mut self, target: u32) -> Result<()>;
+    fn move_cross(&mut self, target: u32) -> Result<()>;
+}
+
+fn init_adc() -> Result<Adc> {
+    let Ok(device) = libftd2xx::Ft232h::with_description("Single RS232-HS") else {
+        return Err(anyhow!("Failed to open Ft232h"));
+    };
+
+    let hal = FtHal::init_freq(device, 400_000).unwrap();
+    let Ok(dev) = hal.i2c() else {
+        return Err(anyhow!("Failed to create I2C device"));
+    };
+    let mut adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
+    let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
+        return Err(anyhow!("Failed set ADC range"));
+    };
+
+    return Ok(adc);
+}
 
 pub fn init(state: &mut ExecState) -> Result<()> {
-    let backend = { state.config.read().unwrap().control_mode.clone() };
+    let config = { state.config.read().unwrap().clone() };
 
     state.shared.error = None;
     if let Ok(mut out) = state.out_channel.try_write() {
@@ -14,18 +42,47 @@ pub fn init(state: &mut ExecState) -> Result<()> {
         drop(out);
     }
 
-    tracing::debug!("Init control with backend {:?}", &backend);
-    return match backend {
-        ControlMode::Zaber | ControlMode::Manual | ControlMode::Tracking => init_zaber(state),
-    };
+    tracing::debug!("Init control with backend {:?}", config.control_mode);
+    match config.mock_zaber {
+        false => init_backend(init_zaber(config)?, state),
+        true => init_backend(init_zaber_mock()?, state),
+    }
+}
+
+fn init_backend<T>(mut port: ZaberConn<T>, state: &mut ExecState) -> Result<()> where T: zproto::backend::Backend {
+    loop {
+        let target_shared = Arc::clone(&state.target_manual);
+        let config = {
+            let s = state.config.read().unwrap();
+            s.clone()
+        };
+
+        let result = match config.control_mode {
+            utils::ControlMode::Manual => {
+                let backend = ManualBackend::new(&mut port, config.clone(), target_shared)?;
+                run(state, backend)
+            }
+
+            utils::ControlMode::Tracking => {
+                let adc = init_adc()?;
+                let backend = TrackingBackend::new(&mut port, config.clone(), adc, target_shared)?;
+                run(state, backend)
+            }
+        };
+
+        // If only the control mode changes,
+        // zaber does not need to re-initalized.
+        let config_current = state.config.read().unwrap();
+        tracing::debug!("checking control mode: old={:?}, new={:?}", config.control_mode, config_current.control_mode);
+        if config.control_mode == config_current.control_mode {
+            return result;
+        };
+    }
 }
 
 pub fn run(
     state: &mut ExecState,
-    mut get_target: impl FnMut() -> Result<(u32, u32, f64)>,
-    mut get_pos: impl FnMut() -> Result<(u32, u32, bool, bool)>,
-    mut move_coax: impl FnMut(u32) -> Result<()>,
-    mut move_cross: impl FnMut(u32) -> Result<()>,
+    mut backend: impl Backend,
 ) -> Result<()> {
     state.shared.control_state = ControlStatus::Running;
 
@@ -35,11 +92,11 @@ pub fn run(
 
     tracing::info!("Starting control loop");
     loop {
-        let (target_coax, target_cross, voltage) = get_target()?;
+        let (target_coax, target_cross, voltage) = backend.get_target()?;
         state.shared.target_coax = target_coax;
         state.shared.target_cross = target_coax;
 
-        let (pos_coax, pos_cross, busy_coax, busy_cross) = get_pos()?;
+        let (pos_coax, pos_cross, busy_coax, busy_cross) = backend.get_pos()?;
         state.shared.position_coax = pos_coax;
         state.shared.position_cross = pos_cross;
         state.shared.busy_coax = busy_coax;
@@ -49,12 +106,12 @@ pub fn run(
 
         tracing::debug!("Position coax: target={target_coax} actual={pos_coax}");
         if target_coax != pos_coax {
-            move_coax(target_coax)?;
+            backend.move_coax(target_coax)?;
         }
 
         tracing::debug!("Position cross: target={target_cross} actual={pos_cross}");
         if target_cross != pos_cross {
-            move_cross(target_cross)?;
+            backend.move_cross(target_cross)?;
         }
 
         if let Ok(mut out) = state.out_channel.try_write() {
