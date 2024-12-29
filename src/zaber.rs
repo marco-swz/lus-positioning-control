@@ -174,10 +174,6 @@ pub fn init_zaber(
     };
 }
 
-fn deinit_zaber(result: Result<()>) -> Result<()> {
-    return result;
-}
-
 fn init_axes<T>(zaber_conn: &mut ZaberConn<T>, config: &Config) -> Result<()>
 where
     T: zproto::backend::Backend,
@@ -239,20 +235,6 @@ where
         .flag_ok()?;
 
     Ok(())
-}
-
-pub fn get_target_zaber<T: zproto::backend::Backend>(
-    zaber_conn: &mut ZaberConn<T>,
-    voltage_range: (f64, f64),
-    pos_range: (u32, u32),
-) -> Result<(u32, u32, f64)> {
-    let cmd = format!("io get ai 1");
-    let reply = zaber_conn.command_reply((2, cmd))?.flag_ok()?;
-    let voltage = reply.data().parse()?;
-    let target_coax = voltage_to_steps(voltage, voltage_range, pos_range);
-    // TODO(marco): Set target for cross axis
-    let target_cross = 0;
-    return Ok((target_coax, target_cross, voltage));
 }
 
 pub fn get_pos_zaber<T: zproto::backend::Backend>(
