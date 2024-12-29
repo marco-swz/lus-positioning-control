@@ -123,6 +123,10 @@ form {
     margin-top: 20px;
 }
 
+input[type=range]:disabled {
+    cursor: not-allowed;
+}
+
 #cont-ctrl-top {
     display: flex;
     height: 300px;
