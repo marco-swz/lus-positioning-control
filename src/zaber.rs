@@ -1,10 +1,11 @@
 use std::sync::{Arc, RwLock};
 
-use crate::{control::Backend, utils::Config};
+use crate::{control::Backend, simulation::Simulator, utils::Config};
 use ads1x1x::ic::{Ads1115, Resolution16Bit};
 use ads1x1x::mode::OneShot;
 use ads1x1x::{channel, Ads1x1x};
 use anyhow::{anyhow, Result};
+use chrono::Local;
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
 use linux_embedded_hal::nb::block;
 use zproto::ascii::{
@@ -26,7 +27,6 @@ pub struct TrackingBackend<'a, T> {
     adc: Adc,
     target_manual: (u32, u32, f64),
     target_manual_shared: Arc<RwLock<(u32, u32, f64)>>,
-    voltage: f64,
 }
 
 impl<'a, T> TrackingBackend<'a, T>
@@ -46,7 +46,6 @@ where
             adc,
             target_manual: (0, 0, 0.),
             target_manual_shared: target_shared,
-            voltage: 0.,
         })
     }
 }
@@ -90,7 +89,6 @@ where
 }
 
 pub struct ManualBackend<'a, T> {
-    config: Config,
     zaber_conn: &'a mut ZaberConn<T>,
     target: (u32, u32, f64),
     target_shared: Arc<RwLock<(u32, u32, f64)>>,
@@ -107,7 +105,6 @@ where
     ) -> Result<Self> {
         init_axes(port, &config)?;
         Ok(ManualBackend {
-            config,
             zaber_conn: port,
             target: (0, 0, 0.),
             target_shared,
@@ -143,13 +140,27 @@ where
 
 pub fn init_zaber_mock() -> Result<zproto::ascii::Port<'static, zproto::backend::Mock>> {
     let mut port = Port::open_mock();
+    let mut sim = Simulator {
+        lockstep: false,
+        pos_cross: 0,
+        pos_coax1: 0,
+        pos_coax2: 0,
+        time: Local::now(),
+        target_cross: 0,
+        target_coax1: 0,
+        target_coax2: 0,
+        vel_cross: 23000.,
+        vel_coax: 23000.,
+    };
     port.backend_mut()
         .set_write_callback(|message, reply_buffer| {
             match message {
-                b"/get pos\n" => write!(
-                    reply_buffer,
-                    "@01 0 OK BUSY -- 1000\r\n@02 0 OK BUSY -- 10000\r\n"
-                ),
+                b"/get pos\n" => {
+                    write!(
+                        reply_buffer,
+                        "@01 0 OK BUSY -- 1000\r\n@02 0 OK BUSY -- 2000\r\n",
+                    )
+                }
                 [b'/', b'1', ..] => write!(reply_buffer, "@01 0 OK BUSY -- 1000\r\n"),
                 [b'/', b'2', ..] => write!(reply_buffer, "@02 0 OK BUSY -- 2000\r\n"),
                 _ => Ok(()),

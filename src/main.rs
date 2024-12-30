@@ -19,6 +19,8 @@ use utils::{ControlMode, Config, ControlStatus, ExecState, SharedState};
 mod web;
 use web::{run_web_server, WebState};
 
+mod simulation;
+
 fn read_config() -> Result<Config> {
     // TODO(marco): Panic on parse error, default if none found
     match std::fs::read_to_string("config.toml") {
