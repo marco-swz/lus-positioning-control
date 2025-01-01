@@ -1,3 +1,4 @@
+use std::io;
 use std::sync::{Arc, RwLock};
 
 use crate::{control::Backend, simulation::Simulator, utils::Config};
@@ -8,6 +9,7 @@ use anyhow::{anyhow, Result};
 use chrono::Local;
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
 use linux_embedded_hal::nb::block;
+use zproto::ascii::command::MaxPacketSize;
 use zproto::ascii::{
     response::{check, Status},
     Port,
@@ -138,36 +140,31 @@ where
     }
 }
 
-pub fn init_zaber_mock() -> Result<zproto::ascii::Port<'static, zproto::backend::Mock>> {
-    let mut port = Port::open_mock();
-    let mut sim = Simulator {
+pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
+    let sim = Simulator {
         lockstep: false,
         pos_cross: 0,
         pos_coax1: 0,
         pos_coax2: 0,
+        busy_cross: false,
+        busy_coax1: false,
+        busy_coax2: false,
         time: Local::now(),
         target_cross: 0,
         target_coax1: 0,
         target_coax2: 0,
         vel_cross: 23000.,
         vel_coax: 23000.,
+        ignored_read_timeout: None,
+        buffer: io::Cursor::new(Vec::new()),
     };
-    port.backend_mut()
-        .set_write_callback(|message, reply_buffer| {
-            match message {
-                b"/get pos\n" => {
-                    write!(
-                        reply_buffer,
-                        "@01 0 OK BUSY -- 1000\r\n@02 0 OK BUSY -- 2000\r\n",
-                    )
-                }
-                [b'/', b'1', ..] => write!(reply_buffer, "@01 0 OK BUSY -- 1000\r\n"),
-                [b'/', b'2', ..] => write!(reply_buffer, "@02 0 OK BUSY -- 2000\r\n"),
-                _ => Ok(()),
-            }
-            .unwrap()
-        });
-    return Ok(port);
+    return Ok(
+        Port::from_backend(
+        sim,
+        false,
+        false,
+        MaxPacketSize::default(),
+    ));
 }
 
 pub fn init_zaber(
