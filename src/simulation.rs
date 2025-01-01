@@ -25,6 +25,26 @@ pub struct Simulator {
 }
 
 impl Simulator {
+    pub fn new() -> Self {
+        Simulator {
+            lockstep: false,
+            pos_cross: 0,
+            pos_coax1: 0,
+            pos_coax2: 0,
+            busy_cross: false,
+            busy_coax1: false,
+            busy_coax2: false,
+            time: Local::now(),
+            target_cross: 0,
+            target_coax1: 0,
+            target_coax2: 0,
+            vel_cross: 23000.,
+            vel_coax: 23000.,
+            ignored_read_timeout: None,
+            buffer: io::Cursor::new(Vec::new()),
+        }
+    }
+
     pub fn step(&mut self, time_step: Duration) {
         self.pos_coax1 = move_axis(self.pos_coax1, self.target_coax1, self.vel_coax, time_step);
         self.pos_coax2 = move_axis(self.pos_coax2, self.target_coax2, self.vel_coax, time_step);
@@ -49,7 +69,7 @@ impl Simulator {
             "{}",
             format!(
                 "@01 0 OK {} -- {}\r\n@02 0 OK {} -- {}\r\n",
-                self.pos_coax1, busy_coax, self.pos_cross, busy_cross,
+                busy_coax, self.pos_coax1, busy_cross, self.pos_cross,
             )
         )
         .unwrap();
@@ -74,12 +94,11 @@ impl Simulator {
             format!("@0{} 0 OK BUSY -- {}\r\n", axis, pos,)
         )
         .unwrap();
-        dbg!(str::from_utf8(self.buffer.get_ref()).unwrap());
     }
 
     pub fn is_empty(&self) -> bool {
-		self.buffer.position() >= self.buffer.get_ref().len() as u64
-	}
+        self.buffer.position() >= self.buffer.get_ref().len() as u64
+    }
 }
 
 impl zproto::backend::Backend for Simulator {
@@ -105,7 +124,6 @@ impl zproto::backend::Backend for Simulator {
 
 impl io::Read for Simulator {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        dbg!(str::from_utf8(self.buffer.get_ref()).unwrap());
         if self.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
@@ -118,19 +136,19 @@ impl io::Read for Simulator {
 
 impl io::Write for Simulator {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.buffer.get_mut().clear();
         match buf {
             b"/get pos\n" => self.get_pos(),
-            s if s.starts_with(b"/1 lockstep 1 move abs") => self.move_abs(
-                1,
-                str::from_utf8(&s[23..]).unwrap().trim().parse().unwrap(),
-            ),
-            s if s.starts_with(b"/2 move abs") => self.move_abs(
-                2,
-                str::from_utf8(&s[12..]).unwrap().trim().parse().unwrap(),
-            ),
+            s if s.starts_with(b"/1 lockstep 1 move abs") => {
+                self.move_abs(1, str::from_utf8(&s[23..]).unwrap().trim().parse().unwrap())
+            }
+            s if s.starts_with(b"/2 move abs") => {
+                self.move_abs(2, str::from_utf8(&s[12..]).unwrap().trim().parse().unwrap())
+            }
             _ => panic!("unexpected message: {:?}", buf),
         };
 
+        self.buffer.set_position(0);
         return Ok(buf.len());
     }
 
@@ -152,7 +170,6 @@ fn move_axis(pos: u32, target: u32, mut vel: f64, time_step: Duration) -> u32 {
         + vel * time_step.num_seconds() as f64
         + vel * time_step.subsec_nanos() as f64 / 1.0e9) as u32;
 
-    dbg!(pos_new);
     if pos < target && pos_new > target {
         pos_new = target
     }
@@ -165,13 +182,11 @@ fn move_axis(pos: u32, target: u32, mut vel: f64, time_step: Duration) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
-
     use crate::zaber::ZaberConn;
 
     use super::{move_axis, Simulator};
-    use chrono::{Duration, Local};
-    use zproto::ascii::{command::MaxPacketSize, Port};
+    use chrono::Duration;
+    use zproto::ascii::{command::MaxPacketSize, response::{check, Status}, Port};
 
     #[test]
     fn test_move() {
@@ -199,29 +214,59 @@ mod tests {
 
     #[test]
     fn test_sim_move_abs() {
-        let sim = Simulator {
-            lockstep: true,
-            pos_cross: 100,
-            pos_coax1: 2000,
-            pos_coax2: 0,
-            busy_cross: true,
-            busy_coax1: false,
-            busy_coax2: false,
-            time: Local::now(),
-            target_cross: 0,
-            target_coax1: 0,
-            target_coax2: 0,
-            vel_cross: 23000.,
-            vel_coax: 23000.,
-            ignored_read_timeout: None,
-            buffer: io::Cursor::new(Vec::new()),
-        };
+        let mut sim = Simulator::new();
+        sim.lockstep = true;
+        sim.pos_cross = 100;
+        sim.pos_coax1 = 2000;
+        sim.busy_cross = true;
+
         let mut port: ZaberConn<Simulator> =
             Port::from_backend(sim, false, false, MaxPacketSize::default());
-        let _ = port
+        let resp = port
             .command_reply((2, "move abs 3000"))
             .unwrap()
             .flag_ok()
             .unwrap();
+
+        assert_eq!(resp.target().device(), 2);
+        assert_eq!(resp.target().axis(), 0);
+        assert_eq!(resp.status(), Status::Busy);
+        assert_eq!(resp.data(), "100");
+
+        let resp = port
+            .command_reply((1, "move abs 3000"))
+            .unwrap()
+            .flag_ok()
+            .unwrap();
+
+        assert_eq!(resp.target().device(), 1);
+        assert_eq!(resp.target().axis(), 0);
+        assert_eq!(resp.status(), Status::Idle);
+        assert_eq!(resp.data(), "2000");
+    }
+
+    #[test]
+    fn test_sim_get_pos() {
+        let mut sim = Simulator::new();
+        sim.lockstep = true;
+        sim.pos_cross = 100;
+        sim.pos_coax1 = 2000;
+        sim.busy_cross = true;
+
+        let mut port: ZaberConn<Simulator> =
+            Port::from_backend(sim, false, false, MaxPacketSize::default());
+        let resp = port.command_reply_n("get pos", 2, check::flag_ok()).unwrap();
+
+        assert_eq!(resp[0].target().device(), 1);
+        assert_eq!(resp[0].target().axis(), 0);
+        assert_eq!(resp[0].status(), Status::Idle);
+        assert_eq!(resp[0].warning(), "--");
+        assert_eq!(resp[0].data(), "2000");
+
+        assert_eq!(resp[1].target().device(), 2);
+        assert_eq!(resp[1].target().axis(), 0);
+        assert_eq!(resp[1].status(), Status::Busy);
+        assert_eq!(resp[1].warning(), "--");
+        assert_eq!(resp[1].data(), "100");
     }
 }
