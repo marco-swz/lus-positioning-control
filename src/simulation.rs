@@ -55,6 +55,8 @@ impl Simulator {
     pub fn get_pos(&mut self) {
         assert!(self.lockstep);
 
+        self.step(Local::now().signed_duration_since(self.time));
+
         let busy_coax = match self.busy_coax1 {
             true => "BUSY",
             false => "IDLE",
@@ -78,12 +80,10 @@ impl Simulator {
     pub fn move_abs(&mut self, axis: u8, target: u32) {
         assert!(self.lockstep);
 
-        let mut pos = self.pos_coax1;
         if axis == 1 {
             self.target_coax1 = target;
         } else if axis == 2 {
             self.target_cross = target;
-            pos = self.pos_cross;
         } else {
             panic!("error move abs: invalid axis {axis}")
         }
@@ -91,9 +91,40 @@ impl Simulator {
         write!(
             self.buffer,
             "{}",
-            format!("@0{} 0 OK BUSY -- {}\r\n", axis, pos,)
+            format!("@0{} 0 OK BUSY -- 0\r\n", axis)
         )
         .unwrap();
+
+        self.step(Local::now().signed_duration_since(self.time));
+    }
+
+    pub fn home(&mut self) {
+        self.target_coax1 = 0;
+        self.target_coax2 = 0;
+        self.target_cross = 0;
+
+        let busy_coax = match self.busy_coax1 {
+            true => "BUSY",
+            false => "IDLE",
+        };
+        let busy_cross = match self.busy_cross {
+            true => "BUSY",
+            false => "IDLE",
+        };
+
+        write!(
+            self.buffer,
+            "{}",
+            format!(
+                "@01 0 OK {} -- {}\r\n@02 0 OK {} -- {}\r\n",
+                busy_coax, self.pos_coax1, busy_cross, self.pos_cross,
+            )
+        )
+        .unwrap();
+    }
+
+    pub fn system_restore(&mut self) {
+        *self = Self::new();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -139,6 +170,9 @@ impl io::Write for Simulator {
         self.buffer.get_mut().clear();
         match buf {
             b"/get pos\n" => self.get_pos(),
+            b"/system restore\n" => self.system_restore(),
+            b"/home\n" => self.home(),
+            b"/set comm.alert 0\n" => (),
             s if s.starts_with(b"/1 lockstep 1 move abs") => {
                 self.move_abs(1, str::from_utf8(&s[23..]).unwrap().trim().parse().unwrap())
             }
