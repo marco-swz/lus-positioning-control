@@ -5,21 +5,17 @@ use std::io::Write;
 
 use chrono::{DateTime, Duration, Local};
 
+use crate::zaber::{MAX_POS, MAX_SPEED};
+
 #[derive(Debug)]
 pub struct Simulator {
-    pub pos_coax1: u32,
-    pub pos_coax2: u32,
-    pub pos_cross: u32,
-    pub busy_coax1: bool,
-    pub busy_coax2: bool,
-    pub busy_cross: bool,
-    pub lockstep: bool,
-    pub vel_cross: f64,
-    pub vel_coax: f64,
+    pub pos: [[u32; 2]; 2],
+    pub offset: Option<u32>,
+    pub busy: [[bool; 2]; 2],
+    pub vel: [[f64; 2]; 2],
     pub time: DateTime<Local>,
-    pub target_coax1: u32,
-    pub target_coax2: u32,
-    pub target_cross: u32,
+    pub target: [[u32; 2]; 2],
+    pub limit: [[[u32; 2]; 2]; 2],
     pub ignored_read_timeout: Option<std::time::Duration>,
     pub buffer: io::Cursor<Vec<u8>>,
 }
@@ -27,98 +23,134 @@ pub struct Simulator {
 impl Simulator {
     pub fn new() -> Self {
         Simulator {
-            lockstep: false,
-            pos_cross: 0,
-            pos_coax1: 0,
-            pos_coax2: 0,
-            busy_cross: false,
-            busy_coax1: false,
-            busy_coax2: false,
+            pos: [[0; 2], [0; 2]],
+            offset: None,
+            busy: [[false; 2], [false; 2]],
             time: Local::now(),
-            target_cross: 0,
-            target_coax1: 0,
-            target_coax2: 0,
-            vel_cross: 23000.,
-            vel_coax: 23000.,
+            target: [[0; 2], [0; 2]],
+            limit: [[[0, MAX_POS], [0, MAX_POS]], [[0, MAX_POS], [0, MAX_POS]]],
+            vel: [[MAX_SPEED; 2], [MAX_SPEED; 2]],
             ignored_read_timeout: None,
             buffer: io::Cursor::new(Vec::new()),
         }
     }
 
     pub fn step(&mut self, time_step: Duration) {
-        self.pos_coax1 = move_axis(self.pos_coax1, self.target_coax1, self.vel_coax, time_step);
-        self.pos_coax2 = move_axis(self.pos_coax2, self.target_coax2, self.vel_coax, time_step);
-        self.pos_cross = move_axis(self.pos_cross, self.target_cross, self.vel_cross, time_step);
+        self.pos[0][0] = move_axis(self.pos[0][0], self.target[0][0], self.vel[0][0], time_step);
+        self.pos[0][1] = move_axis(self.pos[0][1], self.target[0][1], self.vel[0][1], time_step);
+        self.pos[1][0] = move_axis(self.pos[1][0], self.target[1][0], self.vel[1][0], time_step);
         self.time = self.time + time_step;
     }
 
     pub fn get_pos(&mut self) {
-        assert!(self.lockstep);
+        assert!(self.offset.is_some());
 
-        self.step(Local::now().signed_duration_since(self.time));
-
-        let busy_coax = match self.busy_coax1 {
-            true => "BUSY",
-            false => "IDLE",
-        };
-        let busy_cross = match self.busy_cross {
-            true => "BUSY",
-            false => "IDLE",
-        };
+        let mut msg = self.get_pos_axis(0, 0);
+        msg += &self.get_pos_axis(1, 0);
 
         write!(
             self.buffer,
             "{}",
-            format!(
-                "@01 0 OK {} -- {}\r\n@02 0 OK {} -- {}\r\n",
-                busy_coax, self.pos_coax1, busy_cross, self.pos_cross,
-            )
+            msg
         )
         .unwrap();
     }
 
-    pub fn move_abs(&mut self, axis: u8, target: u32) {
-        assert!(self.lockstep);
+    fn get_pos_axis(&self, device: usize, axis: usize) -> String {
+        let busy = match self.busy[device][axis] {
+            true => "BUSY",
+            false => "IDLE",
+        };
 
-        if axis == 1 {
-            self.target_coax1 = target;
-        } else if axis == 2 {
-            self.target_cross = target;
-        } else {
-            panic!("error move abs: invalid axis {axis}")
+        format!("@0{} {} OK {} -- {}\r\n", device, axis, busy, self.pos[device][axis])
+    }
+
+    fn move_abs_axis(&mut self, device: usize, axis: usize, target: u32) -> String {
+        let busy = match self.busy[device][axis] {
+            true => "BUSY",
+            false => "IDLE",
+        };
+
+        if target < self.limit[device][axis][0] || target > self.limit[device][axis][1] {
+            return format!("@0{} {} RJ BUSY WR BADDATA\r\n", device, axis);
         }
+
+        self.target[device][axis] = target;
+
+        format!("@0{} {} OK {} -- 0\r\n", device, axis, busy)
+    }
+
+    pub fn move_abs(&mut self, device: Option<usize>, axis: Option<usize>, target: u32) {
+        assert!(self.offset.is_some());
+
+        let msg = match device {
+            Some(d) => match axis {
+                Some(a) => self.move_abs_axis(d, a, target),
+                None => {
+                    let mut msg = self.move_abs_axis(d, 0, target);
+                    msg += &self.move_abs_axis(d, 1, target);
+                    msg
+                }
+            }
+            None => {
+                    let mut msg = self.move_abs_axis(0, 0, target);
+                    msg += &self.move_abs_axis(0, 1, target);
+                    msg += &self.move_abs_axis(1, 0, target);
+                    msg
+            }
+        };
 
         write!(
             self.buffer,
             "{}",
-            format!("@0{} 0 OK BUSY -- 0\r\n", axis)
+            msg
         )
         .unwrap();
+    }
 
-        self.step(Local::now().signed_duration_since(self.time));
+    pub fn set_limit(&mut self, device: usize, axis: usize, limit: u32, is_max: bool) {
+        if is_max {
+            self.limit[device][axis][1] = limit;
+        } else {
+            self.limit[device][axis][0] = limit;
+        }
+
+        let busy = match self.busy[device][axis] {
+            true => "BUSY",
+            false => "IDLE",
+        };
+
+        write!(
+            self.buffer,
+            "{}",
+            format!("@0{} {} OK {} -- 0\r\n", device, axis, busy)
+        )
+        .unwrap();
+    }
+
+    fn home_axis(&mut self, device: usize, axis: usize) -> String {
+        self.target[device][axis] = 0;
+
+        let status = match self.busy[device][axis] {
+            true => "BUSY",
+            false => "IDLE",
+        };
+
+        format!(
+            "@0{} {} OK {} -- 0\r\n",
+            device, axis, status, 
+        )
     }
 
     pub fn home(&mut self) {
-        self.target_coax1 = 0;
-        self.target_coax2 = 0;
-        self.target_cross = 0;
-
-        let busy_coax = match self.busy_coax1 {
-            true => "BUSY",
-            false => "IDLE",
-        };
-        let busy_cross = match self.busy_cross {
-            true => "BUSY",
-            false => "IDLE",
-        };
+        let mut msg = self.home_axis(0, 0);
+        msg += &self.home_axis(0, 1);
+        msg += &self.home_axis(1, 0);
 
         write!(
             self.buffer,
             "{}",
-            format!(
-                "@01 0 OK {} -- {}\r\n@02 0 OK {} -- {}\r\n",
-                busy_coax, self.pos_coax1, busy_cross, self.pos_cross,
-            )
+            msg
         )
         .unwrap();
     }
@@ -168,6 +200,20 @@ impl io::Read for Simulator {
 impl io::Write for Simulator {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buffer.get_mut().clear();
+
+        self.step(Local::now().signed_duration_since(self.time));
+
+        let (device, axis) = match str::from_utf8(&buf[1..3]) {
+            Err(_) => (None, None),
+            Ok(d) => match str::from_utf8(&buf[4..6]) {
+                Err(_) => panic!("Invalid message"),
+                Ok(a) => match a {
+                    0 => (Some(d), None),
+                    _ => (Some(d), Some(a)),
+                }
+            }
+        };
+
         match buf {
             b"/get pos\n" => self.get_pos(),
             b"/system restore\n" => self.system_restore(),
@@ -178,6 +224,18 @@ impl io::Write for Simulator {
             }
             s if s.starts_with(b"/2 move abs") => {
                 self.move_abs(2, str::from_utf8(&s[12..]).unwrap().trim().parse().unwrap())
+            }
+            s if s.starts_with(b"/1 set limit.max") => {
+                self.set_limit_max(1, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
+            }
+            s if s.starts_with(b"/2 set limit.max") => {
+                self.set_limit_max(2, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
+            }
+            s if s.starts_with(b"/1 set limit.min") => {
+                self.set_limit_min(1, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
+            }
+            s if s.starts_with(b"/2 set limit.min") => {
+                self.set_limit_min(2, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
             }
             _ => panic!("unexpected message: {:?}", buf),
         };

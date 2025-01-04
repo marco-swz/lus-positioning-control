@@ -18,7 +18,7 @@ use zproto::ascii::{
 pub const MICROSTEP_SIZE: f64 = 0.49609375; //µm
 pub const VELOCITY_FACTOR: f64 = 1.6384;
 pub const MAX_POS: u32 = 201574; // microsteps
-pub const MAX_SPEED: u32 = 153600; // microsteps/sec
+pub const MAX_SPEED: f64 = 153600.; // microsteps/sec
 
 pub type ZaberConn<T> = Port<'static, T>;
 pub type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, OneShot>;
@@ -146,9 +146,7 @@ pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
         pos_cross: 0,
         pos_coax1: 0,
         pos_coax2: 0,
-        busy_cross: false,
-        busy_coax1: false,
-        busy_coax2: false,
+        busy: [[false, false], [false]],
         time: Local::now(),
         target_cross: 0,
         target_coax1: 0,
