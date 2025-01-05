@@ -48,12 +48,7 @@ impl Simulator {
         let mut msg = self.get_pos_axis(0, 0);
         msg += &self.get_pos_axis(1, 0);
 
-        write!(
-            self.buffer,
-            "{}",
-            msg
-        )
-        .unwrap();
+        write!(self.buffer, "{}", msg).unwrap();
     }
 
     fn get_pos_axis(&self, device: usize, axis: usize) -> String {
@@ -62,53 +57,70 @@ impl Simulator {
             false => "IDLE",
         };
 
-        format!("@0{} {} OK {} -- {}\r\n", device, axis, busy, self.pos[device][axis])
+        format!(
+            "@0{} 0 OK {} -- {}\r\n",
+            device + 1,
+            busy,
+            self.pos[device][axis]
+        )
     }
 
-    fn move_abs_axis(&mut self, device: usize, axis: usize, target: u32) -> String {
-        let busy = match self.busy[device][axis] {
-            true => "BUSY",
-            false => "IDLE",
-        };
-
+    fn move_abs_axis(&mut self, device: usize, axis: usize, target: u32) -> bool {
         if target < self.limit[device][axis][0] || target > self.limit[device][axis][1] {
-            return format!("@0{} {} RJ BUSY WR BADDATA\r\n", device, axis);
+            return false;
         }
 
         self.target[device][axis] = target;
-
-        format!("@0{} {} OK {} -- 0\r\n", device, axis, busy)
+        return true;
     }
 
     pub fn move_abs(&mut self, device: Option<usize>, axis: Option<usize>, target: u32) {
         assert!(self.offset.is_some());
 
-        let msg = match device {
+        let msg: String = match device {
             Some(d) => match axis {
-                Some(a) => self.move_abs_axis(d, a, target),
-                None => {
-                    let mut msg = self.move_abs_axis(d, 0, target);
-                    msg += &self.move_abs_axis(d, 1, target);
+                Some(a) => {
+                    let mut msg = format!("@0{} {} RJ BUSY WR BADDATA\r\n", d + 1, a + 1);
+                    if self.move_abs_axis(d, a, target) {
+                        msg = format!("@0{} {} OK BUSY -- 0\r\n", d + 1, a + 1);
+                    }
                     msg
                 }
-            }
-            None => {
-                    let mut msg = self.move_abs_axis(0, 0, target);
-                    msg += &self.move_abs_axis(0, 1, target);
-                    msg += &self.move_abs_axis(1, 0, target);
+                None => {
+                    let mut msg = format!("@0{} 0 RJ BUSY WR BADDATA\r\n", d + 1);
+                    if self.move_abs_axis(d, 0, target) && self.move_abs_axis(d, 1, target) {
+                        msg = format!("@0{} 0 OK BUSY -- 0\r\n", d + 1);
+                    }
                     msg
+                }
+            },
+            None => {
+                let mut msg_dev1 = format!("@01 0 RJ BUSY WR BADDATA\r\n");
+                if self.move_abs_axis(0, 0, target) && self.move_abs_axis(0, 1, target) {
+                    msg_dev1 = format!("@01 0 OK BUSY -- 0\r\n");
+                }
+
+                let mut msg_dev2 = format!("@02 0 RJ BUSY WR BADDATA\r\n");
+                if self.move_abs_axis(1, 0, target) {
+                    msg_dev2 = format!("@02 0 OK BUSY -- 0\r\n");
+                }
+                msg_dev1 + &msg_dev2
             }
         };
 
-        write!(
-            self.buffer,
-            "{}",
-            msg
-        )
-        .unwrap();
+        write!(self.buffer, "{}", msg).unwrap();
     }
 
-    pub fn set_limit(&mut self, device: usize, axis: usize, limit: u32, is_max: bool) {
+    pub fn set_limit(
+        &mut self,
+        device: Option<usize>,
+        axis: Option<usize>,
+        limit: u32,
+        is_max: bool,
+    ) {
+        let device = device.unwrap();
+        let axis = axis.unwrap();
+
         if is_max {
             self.limit[device][axis][1] = limit;
         } else {
@@ -123,7 +135,7 @@ impl Simulator {
         write!(
             self.buffer,
             "{}",
-            format!("@0{} {} OK {} -- 0\r\n", device, axis, busy)
+            format!("@0{} {} OK {} -- 0\r\n", device + 1, axis + 1, busy)
         )
         .unwrap();
     }
@@ -136,10 +148,7 @@ impl Simulator {
             false => "IDLE",
         };
 
-        format!(
-            "@0{} {} OK {} -- 0\r\n",
-            device, axis, status, 
-        )
+        format!("@0{} {} OK {} -- 0\r\n", device + 1, axis + 1, status,)
     }
 
     pub fn home(&mut self) {
@@ -147,12 +156,7 @@ impl Simulator {
         msg += &self.home_axis(0, 1);
         msg += &self.home_axis(1, 0);
 
-        write!(
-            self.buffer,
-            "{}",
-            msg
-        )
-        .unwrap();
+        write!(self.buffer, "{}", msg).unwrap();
     }
 
     pub fn system_restore(&mut self) {
@@ -203,41 +207,58 @@ impl io::Write for Simulator {
 
         self.step(Local::now().signed_duration_since(self.time));
 
-        let (device, axis) = match str::from_utf8(&buf[1..3]) {
-            Err(_) => (None, None),
-            Ok(d) => match str::from_utf8(&buf[4..6]) {
-                Err(_) => panic!("Invalid message"),
-                Ok(a) => match a {
-                    0 => (Some(d), None),
-                    _ => (Some(d), Some(a)),
-                }
-            }
-        };
+        dbg!(str::from_utf8(&buf[1..2]).unwrap());
+        dbg!(str::from_utf8(&buf[3..4]).unwrap());
 
-        match buf {
-            b"/get pos\n" => self.get_pos(),
-            b"/system restore\n" => self.system_restore(),
-            b"/home\n" => self.home(),
-            b"/set comm.alert 0\n" => (),
-            s if s.starts_with(b"/1 lockstep 1 move abs") => {
-                self.move_abs(1, str::from_utf8(&s[23..]).unwrap().trim().parse().unwrap())
-            }
-            s if s.starts_with(b"/2 move abs") => {
-                self.move_abs(2, str::from_utf8(&s[12..]).unwrap().trim().parse().unwrap())
-            }
-            s if s.starts_with(b"/1 set limit.max") => {
-                self.set_limit_max(1, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
-            }
-            s if s.starts_with(b"/2 set limit.max") => {
-                self.set_limit_max(2, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
-            }
-            s if s.starts_with(b"/1 set limit.min") => {
-                self.set_limit_min(1, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
-            }
-            s if s.starts_with(b"/2 set limit.min") => {
-                self.set_limit_min(2, str::from_utf8(&s[17..]).unwrap().trim().parse().unwrap())
-            }
-            _ => panic!("unexpected message: {:?}", buf),
+        let (device, axis, command_slice) =
+            match str::from_utf8(&buf[1..2]).unwrap().parse::<usize>() {
+                Err(_) => (None, None, 1..),
+                Ok(d) => match str::from_utf8(&buf[3..4]).unwrap().parse::<usize>() {
+                    Err(_) => (Some(d - 1), None, 3..),
+                    Ok(a) => (Some(d - 1), Some(a - 1), 6..),
+                },
+            };
+
+        match &buf[command_slice] {
+            b"get pos\n" => self.get_pos(),
+            b"system restore\n" => self.system_restore(),
+            b"home\n" => self.home(),
+            b"set comm.alert 0\n" => (),
+            s if s.starts_with(b"lockstep 1 move abs") => self.move_abs(
+                device,
+                axis,
+                str::from_utf8(&s[20..]).unwrap().trim().parse().unwrap(),
+            ),
+            s if s.starts_with(b"move abs") => self.move_abs(
+                device,
+                axis,
+                str::from_utf8(&s[9..]).unwrap().trim().parse().unwrap(),
+            ),
+            s if s.starts_with(b"set limit.max") => self.set_limit(
+                device,
+                axis,
+                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
+                true,
+            ),
+            s if s.starts_with(b"set limit.max") => self.set_limit(
+                device,
+                axis,
+                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
+                true,
+            ),
+            s if s.starts_with(b"set limit.min") => self.set_limit(
+                device,
+                axis,
+                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
+                false,
+            ),
+            s if s.starts_with(b"set limit.min") => self.set_limit(
+                device,
+                axis,
+                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
+                false,
+            ),
+            _ => panic!("unexpected message: {:?}", str::from_utf8(buf).unwrap()),
         };
 
         self.buffer.set_position(0);
@@ -278,7 +299,11 @@ mod tests {
 
     use super::{move_axis, Simulator};
     use chrono::Duration;
-    use zproto::ascii::{command::MaxPacketSize, response::{check, Status}, Port};
+    use zproto::ascii::{
+        command::MaxPacketSize,
+        response::{check, Status},
+        Port,
+    };
 
     #[test]
     fn test_move() {
@@ -307,10 +332,10 @@ mod tests {
     #[test]
     fn test_sim_move_abs() {
         let mut sim = Simulator::new();
-        sim.lockstep = true;
-        sim.pos_cross = 100;
-        sim.pos_coax1 = 2000;
-        sim.busy_cross = true;
+        sim.offset = Some(0);
+        sim.pos = [[2000, 2000], [100, 0]];
+        sim.target = [[2000, 2000], [100, 0]];
+        sim.busy = [[false, false], [true, false]];
 
         let mut port: ZaberConn<Simulator> =
             Port::from_backend(sim, false, false, MaxPacketSize::default());
@@ -322,8 +347,7 @@ mod tests {
 
         assert_eq!(resp.target().device(), 2);
         assert_eq!(resp.target().axis(), 0);
-        assert_eq!(resp.status(), Status::Busy);
-        assert_eq!(resp.data(), "100");
+        assert_eq!(port.backend().target[1][0], 3000);
 
         let resp = port
             .command_reply((1, "move abs 3000"))
@@ -333,21 +357,22 @@ mod tests {
 
         assert_eq!(resp.target().device(), 1);
         assert_eq!(resp.target().axis(), 0);
-        assert_eq!(resp.status(), Status::Idle);
-        assert_eq!(resp.data(), "2000");
+        assert_eq!(port.backend().target[0][1], 3000);
     }
 
     #[test]
     fn test_sim_get_pos() {
         let mut sim = Simulator::new();
-        sim.lockstep = true;
-        sim.pos_cross = 100;
-        sim.pos_coax1 = 2000;
-        sim.busy_cross = true;
+        sim.offset = Some(0);
+        sim.pos = [[2000, 2000], [100, 0]];
+        sim.target = [[2000, 2000], [100, 0]];
+        sim.busy = [[false, false], [true, false]];
 
         let mut port: ZaberConn<Simulator> =
             Port::from_backend(sim, false, false, MaxPacketSize::default());
-        let resp = port.command_reply_n("get pos", 2, check::flag_ok()).unwrap();
+        let resp = port
+            .command_reply_n("get pos", 2, check::flag_ok())
+            .unwrap();
 
         assert_eq!(resp[0].target().device(), 1);
         assert_eq!(resp[0].target().axis(), 0);

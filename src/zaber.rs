@@ -141,21 +141,7 @@ where
 }
 
 pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
-    let sim = Simulator {
-        lockstep: false,
-        pos_cross: 0,
-        pos_coax1: 0,
-        pos_coax2: 0,
-        busy: [[false, false], [false]],
-        time: Local::now(),
-        target_cross: 0,
-        target_coax1: 0,
-        target_coax2: 0,
-        vel_cross: 23000.,
-        vel_coax: 23000.,
-        ignored_read_timeout: None,
-        buffer: io::Cursor::new(Vec::new()),
-    };
+    let sim = Simulator::new();
     return Ok(
         Port::from_backend(
         sim,
@@ -315,8 +301,8 @@ pub fn mm_per_sec_to_steps_per_sec(millis_per_s: f64) -> u32 {
     (millis_per_s * 1000. * VELOCITY_FACTOR / MICROSTEP_SIZE) as u32
 }
 
-pub fn steps_per_sec_to_mm_per_sec(steps_per_sec: u32) -> f64 {
-    steps_per_sec as f64 * MICROSTEP_SIZE / 1000. / VELOCITY_FACTOR
+pub fn steps_per_sec_to_mm_per_sec(steps_per_sec: f64) -> f64 {
+    steps_per_sec * MICROSTEP_SIZE / 1000. / VELOCITY_FACTOR
 }
 
 pub fn voltage_to_steps(voltage: f64, voltage_range: (f64, f64), pos_range: (u32, u32)) -> u32 {
