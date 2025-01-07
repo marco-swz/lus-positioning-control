@@ -118,26 +118,50 @@ impl Simulator {
         limit: u32,
         is_max: bool,
     ) {
-        let device = device.unwrap();
-        let axis = axis.unwrap();
-
+        let mut idx = 0;
         if is_max {
-            self.limit[device][axis][1] = limit;
-        } else {
-            self.limit[device][axis][0] = limit;
+            idx = 1;
         }
 
-        let busy = match self.busy[device][axis] {
-            true => "BUSY",
-            false => "IDLE",
+        let msg: String = match device {
+            Some(d) => match axis {
+                Some(a) => {
+                    let mut msg = format!("@0{} {} RJ BUSY WR BADDATA\r\n", d + 1, a + 1);
+                    if limit < MAX_POS {
+                        self.limit[d][a][idx] = limit;
+                        msg = format!("@0{} {} OK BUSY -- 0\r\n", d + 1, a + 1);
+                    }
+                    msg
+                }
+                None => {
+                    let mut msg = format!("@0{} 0 RJ BUSY WR BADDATA\r\n", d + 1);
+                    if limit < MAX_POS {
+                        self.limit[d][0][idx] = limit;
+                        self.limit[d][1][idx] = limit;
+                        msg = format!("@0{} 0 OK BUSY -- 0\r\n", d + 1);
+                    }
+                    msg
+                }
+            },
+            None => {
+                let mut msg_dev1 = format!("@01 0 RJ BUSY WR BADDATA\r\n");
+                if limit < MAX_POS {
+                    self.limit[0][0][idx] = limit;
+                    self.limit[0][1][idx] = limit;
+                    msg_dev1 = format!("@01 0 OK BUSY -- 0\r\n");
+                }
+
+                let mut msg_dev2 = format!("@02 0 RJ BUSY WR BADDATA\r\n");
+                if limit < MAX_POS {
+                    self.limit[1][0][idx] = limit;
+                    self.limit[1][1][idx] = limit;
+                    msg_dev2 = format!("@02 0 OK BUSY -- 0\r\n");
+                }
+                msg_dev1 + &msg_dev2
+            }
         };
 
-        write!(
-            self.buffer,
-            "{}",
-            format!("@0{} {} OK {} -- 0\r\n", device + 1, axis + 1, busy)
-        )
-        .unwrap();
+        write!(self.buffer, "{}", msg,).unwrap();
     }
 
     fn home_axis(&mut self, device: usize, axis: usize) -> String {
@@ -165,6 +189,47 @@ impl Simulator {
 
     pub fn is_empty(&self) -> bool {
         self.buffer.position() >= self.buffer.get_ref().len() as u64
+    }
+
+    pub fn move_rel(&mut self, device: Option<usize>, axis: Option<usize>, target: i32) {
+        assert!(self.offset.is_some());
+
+        let msg: String = match device {
+            Some(d) => match axis {
+                Some(a) => {
+                    let mut msg = format!("@0{} {} RJ BUSY WR BADDATA\r\n", d + 1, a + 1);
+                    if self.move_abs_axis(d, a, (self.target[d][a] as i32 + target) as u32) {
+                        msg = format!("@0{} {} OK BUSY -- 0\r\n", d + 1, a + 1);
+                    }
+                    msg
+                }
+                None => {
+                    let mut msg = format!("@0{} 0 RJ BUSY WR BADDATA\r\n", d + 1);
+                    if self.move_abs_axis(d, 0, (self.target[d][0] as i32 + target) as u32)
+                        && self.move_abs_axis(d, 1, (self.target[d][1] as i32 + target) as u32)
+                    {
+                        msg = format!("@0{} 0 OK BUSY -- 0\r\n", d + 1);
+                    }
+                    msg
+                }
+            },
+            None => {
+                let mut msg_dev1 = format!("@01 0 RJ BUSY WR BADDATA\r\n");
+                if self.move_abs_axis(0, 0, (self.target[0][0] as i32 + target) as u32)
+                    && self.move_abs_axis(0, 1, (self.target[0][1] as i32 + target) as u32)
+                {
+                    msg_dev1 = format!("@01 0 OK BUSY -- 0\r\n");
+                }
+
+                let mut msg_dev2 = format!("@02 0 RJ BUSY WR BADDATA\r\n");
+                if self.move_abs_axis(1, 0, (self.target[1][0] as i32 + target) as u32) {
+                    msg_dev2 = format!("@02 0 OK BUSY -- 0\r\n");
+                }
+                msg_dev1 + &msg_dev2
+            }
+        };
+
+        write!(self.buffer, "{}", msg).unwrap();
     }
 }
 
@@ -207,9 +272,6 @@ impl io::Write for Simulator {
 
         self.step(Local::now().signed_duration_since(self.time));
 
-        dbg!(str::from_utf8(&buf[1..2]).unwrap());
-        dbg!(str::from_utf8(&buf[3..4]).unwrap());
-
         let (device, axis, command_slice) =
             match str::from_utf8(&buf[1..2]).unwrap().parse::<usize>() {
                 Err(_) => (None, None, 1..),
@@ -234,6 +296,13 @@ impl io::Write for Simulator {
                 axis,
                 str::from_utf8(&s[9..]).unwrap().trim().parse().unwrap(),
             ),
+            s if s.starts_with(b"move rel") => {
+                self.move_rel(
+                    device,
+                    axis,
+                    str::from_utf8(&s[9..]).unwrap().trim().parse().unwrap(),
+                );
+            }
             s if s.starts_with(b"set limit.max") => self.set_limit(
                 device,
                 axis,
@@ -361,6 +430,37 @@ mod tests {
     }
 
     #[test]
+    fn test_sim_move_rel() {
+        let mut sim = Simulator::new();
+        sim.offset = Some(0);
+        sim.pos = [[2000, 2000], [100, 0]];
+        sim.target = [[2000, 2000], [100, 0]];
+        sim.busy = [[false, false], [true, false]];
+
+        let mut port: ZaberConn<Simulator> =
+            Port::from_backend(sim, false, false, MaxPacketSize::default());
+        let resp = port
+            .command_reply((1, "move rel 50"))
+            .unwrap()
+            .flag_ok()
+            .unwrap();
+
+        assert_eq!(resp.target().device(), 1);
+        assert_eq!(resp.target().axis(), 0);
+        assert_eq!(port.backend().target[0][0], 2050);
+
+        let resp = port
+            .command_reply((1, "move rel -100"))
+            .unwrap()
+            .flag_ok()
+            .unwrap();
+
+        assert_eq!(resp.target().device(), 1);
+        assert_eq!(resp.target().axis(), 0);
+        assert_eq!(port.backend().target[0][0], 1950);
+    }
+
+    #[test]
     fn test_sim_get_pos() {
         let mut sim = Simulator::new();
         sim.offset = Some(0);
@@ -385,5 +485,30 @@ mod tests {
         assert_eq!(resp[1].status(), Status::Busy);
         assert_eq!(resp[1].warning(), "--");
         assert_eq!(resp[1].data(), "100");
+    }
+
+    #[test]
+    fn test_sim_set_limit() {
+        let mut sim = Simulator::new();
+        sim.offset = Some(0);
+        sim.pos = [[2000, 2000], [100, 0]];
+        sim.target = [[2000, 2000], [100, 0]];
+
+        let mut port: ZaberConn<Simulator> =
+            Port::from_backend(sim, false, false, MaxPacketSize::default());
+        let _ = port
+            .command_reply((1, "set limit.max 2500"))
+            .unwrap()
+            .flag_ok()
+            .unwrap();
+
+        let _ = port
+            .command_reply((1, "set limit.min 50"))
+            .unwrap()
+            .flag_ok()
+            .unwrap();
+
+        assert_eq!(port.backend().limit[0][0][1], 2500);
+        assert_eq!(port.backend().limit[0][1][0], 50);
     }
 }

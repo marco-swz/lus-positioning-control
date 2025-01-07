@@ -1,4 +1,3 @@
-use std::io;
 use std::sync::{Arc, RwLock};
 
 use crate::{control::Backend, simulation::Simulator, utils::Config};
@@ -6,7 +5,6 @@ use ads1x1x::ic::{Ads1115, Resolution16Bit};
 use ads1x1x::mode::OneShot;
 use ads1x1x::{channel, Ads1x1x};
 use anyhow::{anyhow, Result};
-use chrono::Local;
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
 use linux_embedded_hal::nb::block;
 use zproto::ascii::command::MaxPacketSize;
@@ -142,8 +140,7 @@ where
 
 pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
     let sim = Simulator::new();
-    return Ok(
-        Port::from_backend(
+    return Ok(Port::from_backend(
         sim,
         false,
         false,
