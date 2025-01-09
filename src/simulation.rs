@@ -231,6 +231,10 @@ impl Simulator {
 
         write!(self.buffer, "{}", msg).unwrap();
     }
+
+    fn lockstep_enable(&mut self) {
+        self.offset = Some(self.pos[0][1] - self.pos[0][0]);
+    }
 }
 
 impl zproto::backend::Backend for Simulator {
@@ -286,6 +290,8 @@ impl io::Write for Simulator {
             b"system restore\n" => self.system_restore(),
             b"home\n" => self.home(),
             b"set comm.alert 0\n" => (),
+            b"set comm.alert 0\n" => (),
+            b"lockstep 1 setup enable 1 2\n" => self.lockstep_enable(),
             s if s.starts_with(b"lockstep 1 move abs") => self.move_abs(
                 device,
                 axis,
