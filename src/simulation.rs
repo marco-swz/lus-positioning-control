@@ -185,6 +185,7 @@ impl Simulator {
 
     pub fn system_restore(&mut self) {
         *self = Self::new();
+        write!(self.buffer, "@01 0 OK BUSY -- 0\r\n@02 0 OK BUSY -- 0\r\n").unwrap();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -234,6 +235,26 @@ impl Simulator {
 
     fn lockstep_enable(&mut self) {
         self.offset = Some(self.pos[0][1] - self.pos[0][0]);
+        write!(self.buffer, "@01 0 OK BUSY -- 0\r\n").unwrap();
+    }
+
+    fn poll(&mut self, device: Option<usize>) {
+        let device = device.unwrap();
+        let busy = match self.busy[device][0] {
+            true => "BUSY",
+            false => "IDLE",
+        };
+
+        let msg = format!("@0{} 0 OK {} -- 0\r\n", device + 1, busy,);
+        write!(self.buffer, "{}", msg).unwrap();
+    }
+
+    fn set_maxspeed(&mut self, device: Option<usize>, vel: f64) {
+        let device = device.unwrap();
+        self.vel[device][0] = vel;
+        self.vel[device][1] = vel;
+        let msg = format!("@0{} 0 OK BUSY -- 0\r\n", device + 1);
+        write!(self.buffer, "{}", msg).unwrap();
     }
 }
 
@@ -279,18 +300,24 @@ impl io::Write for Simulator {
         let (device, axis, command_slice) =
             match str::from_utf8(&buf[1..2]).unwrap().parse::<usize>() {
                 Err(_) => (None, None, 1..),
-                Ok(d) => match str::from_utf8(&buf[3..4]).unwrap().parse::<usize>() {
+                Ok(d) => match str::from_utf8(&buf.get(3..4).unwrap_or(b"0"))
+                    .unwrap()
+                    .parse::<usize>()
+                {
                     Err(_) => (Some(d - 1), None, 3..),
+                    Ok(0) => (Some(d - 1), None, 6..),
                     Ok(a) => (Some(d - 1), Some(a - 1), 6..),
                 },
             };
 
-        match &buf[command_slice] {
+        match buf.get(command_slice).unwrap_or(b"") {
+            b"" => self.poll(device),
             b"get pos\n" => self.get_pos(),
             b"system restore\n" => self.system_restore(),
             b"home\n" => self.home(),
-            b"set comm.alert 0\n" => (),
-            b"set comm.alert 0\n" => (),
+            b"set comm.alert 0\n" => {
+                write!(self.buffer, "@01 0 OK BUSY -- 0\r\n@02 0 OK BUSY -- 0\r\n").unwrap()
+            }
             b"lockstep 1 setup enable 1 2\n" => self.lockstep_enable(),
             s if s.starts_with(b"lockstep 1 move abs") => self.move_abs(
                 device,
@@ -314,6 +341,10 @@ impl io::Write for Simulator {
                 axis,
                 str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
                 true,
+            ),
+            s if s.starts_with(b"set maxspeed") => self.set_maxspeed(
+                device,
+                str::from_utf8(&s[13..]).unwrap().trim().parse().unwrap(),
             ),
             s if s.starts_with(b"set limit.max") => self.set_limit(
                 device,
