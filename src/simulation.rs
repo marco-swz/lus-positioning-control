@@ -39,6 +39,12 @@ impl Simulator {
         self.pos[0][0] = move_axis(self.pos[0][0], self.target[0][0], self.vel[0][0], time_step);
         self.pos[0][1] = move_axis(self.pos[0][1], self.target[0][1], self.vel[0][1], time_step);
         self.pos[1][0] = move_axis(self.pos[1][0], self.target[1][0], self.vel[1][0], time_step);
+
+        for d in 0..2 {
+            for a in 0..2 {
+                self.busy[d][a] = self.target[d][a] != self.pos[d][a];
+            }
+        }
         self.time = self.time + time_step;
     }
 
@@ -127,7 +133,7 @@ impl Simulator {
             Some(d) => match axis {
                 Some(a) => {
                     let mut msg = format!("@0{} {} RJ BUSY WR BADDATA\r\n", d + 1, a + 1);
-                    if limit < MAX_POS {
+                    if limit <= MAX_POS {
                         self.limit[d][a][idx] = limit;
                         msg = format!("@0{} {} OK BUSY -- 0\r\n", d + 1, a + 1);
                     }
@@ -135,7 +141,7 @@ impl Simulator {
                 }
                 None => {
                     let mut msg = format!("@0{} 0 RJ BUSY WR BADDATA\r\n", d + 1);
-                    if limit < MAX_POS {
+                    if limit <= MAX_POS {
                         self.limit[d][0][idx] = limit;
                         self.limit[d][1][idx] = limit;
                         msg = format!("@0{} 0 OK BUSY -- 0\r\n", d + 1);
@@ -145,14 +151,14 @@ impl Simulator {
             },
             None => {
                 let mut msg_dev1 = format!("@01 0 RJ BUSY WR BADDATA\r\n");
-                if limit < MAX_POS {
+                if limit <= MAX_POS {
                     self.limit[0][0][idx] = limit;
                     self.limit[0][1][idx] = limit;
                     msg_dev1 = format!("@01 0 OK BUSY -- 0\r\n");
                 }
 
                 let mut msg_dev2 = format!("@02 0 RJ BUSY WR BADDATA\r\n");
-                if limit < MAX_POS {
+                if limit <= MAX_POS {
                     self.limit[1][0][idx] = limit;
                     self.limit[1][1][idx] = limit;
                     msg_dev2 = format!("@02 0 OK BUSY -- 0\r\n");
