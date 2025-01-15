@@ -92,6 +92,10 @@ pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
 
     let config = state.config.read().unwrap();
     let cycle_time = config.cycle_time_ns;
+    let pos_coax_max = config.limit_max_coax;
+    let pos_coax_min = config.limit_min_coax;
+    let pos_cross_max = config.limit_max_cross;
+    let pos_cross_min = config.limit_min_cross;
     drop(config);
 
     tracing::info!("Starting control loop");
@@ -109,12 +113,13 @@ pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
         state.shared.timestamp = Local::now();
 
         tracing::debug!("Position coax: target={target_coax} actual={pos_coax}");
-        if target_coax != pos_coax {
+        if target_coax > pos_coax_min && target_coax < pos_coax_max && target_coax != pos_coax {
             backend.move_coax(target_coax)?;
         }
 
         tracing::debug!("Position cross: target={target_cross} actual={pos_cross}");
-        if target_cross != pos_cross {
+        if target_cross > pos_cross_min && target_cross < pos_cross_max && target_cross != pos_cross
+        {
             backend.move_cross(target_cross)?;
         }
 
