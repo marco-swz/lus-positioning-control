@@ -14,7 +14,7 @@ mod opcua;
 use opcua::run_opcua;
 
 mod utils;
-use utils::{ControlMode, Config, ControlStatus, ExecState, SharedState};
+use utils::{Config, ControlMode, ControlStatus, ExecState, SharedState};
 
 mod web;
 use web::{run_web_server, WebState};
@@ -70,7 +70,7 @@ fn main() {
     let mut state = ExecState {
         shared: shared_state.clone(),
         config: Arc::new(RwLock::new(read_config().unwrap_or(Config {
-            cycle_time: Duration::from_millis(1000),
+            cycle_time_ns: Duration::from_millis(1000),
             restart_timeout: Duration::from_secs(10),
             voltage_min: 0.,
             voltage_max: 8.45,

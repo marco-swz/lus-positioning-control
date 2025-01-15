@@ -1,7 +1,12 @@
-use std::{fmt::Display, path::PathBuf, sync::{Arc, RwLock}, time::Duration};
+use std::{
+    fmt::Display,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
-use crossbeam_channel::Receiver;
 use chrono::{DateTime, Local};
+use crossbeam_channel::Receiver;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
@@ -17,9 +22,9 @@ pub enum ControlMode {
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    #[serde_as(as = "serde_with::DurationMilliSeconds<u64>")]
-    pub cycle_time: Duration,
-    #[serde_as(as = "serde_with::DurationMilliSeconds<u64>")]
+    #[serde_as(as = "serde_with::DurationNanoSeconds<u64>")]
+    pub cycle_time_ns: Duration,
+    #[serde_as(as = "serde_with::DurationNanoSeconds<u64>")]
     pub restart_timeout: Duration,
     pub voltage_min: f64,
     pub voltage_max: f64,
@@ -76,4 +81,3 @@ pub struct ExecState {
     pub target_manual: Arc<RwLock<(u32, u32, f64)>>,
     pub config: Arc<RwLock<Config>>,
 }
-

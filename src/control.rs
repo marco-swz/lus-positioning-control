@@ -5,7 +5,7 @@ use crate::{
     zaber::{init_zaber, init_zaber_mock, Adc, ManualBackend, TrackingBackend, ZaberConn},
 };
 use ads1x1x::{Ads1x1x, FullScaleRange, TargetAddr};
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::Local;
 use ftdi_embedded_hal::{libftd2xx, FtHal};
 
@@ -49,7 +49,10 @@ pub fn init(state: &mut ExecState) -> Result<()> {
     }
 }
 
-fn init_backend<T>(mut port: ZaberConn<T>, state: &mut ExecState) -> Result<()> where T: zproto::backend::Backend {
+fn init_backend<T>(mut port: ZaberConn<T>, state: &mut ExecState) -> Result<()>
+where
+    T: zproto::backend::Backend,
+{
     loop {
         let target_shared = Arc::clone(&state.target_manual);
         let config = {
@@ -73,21 +76,22 @@ fn init_backend<T>(mut port: ZaberConn<T>, state: &mut ExecState) -> Result<()> 
         // If only the control mode changes,
         // zaber does not need to re-initalized.
         let config_current = state.config.read().unwrap();
-        tracing::debug!("checking control mode: old={:?}, new={:?}", config.control_mode, config_current.control_mode);
+        tracing::debug!(
+            "checking control mode: old={:?}, new={:?}",
+            config.control_mode,
+            config_current.control_mode
+        );
         if config.control_mode == config_current.control_mode {
             return result;
         };
     }
 }
 
-pub fn run(
-    state: &mut ExecState,
-    mut backend: impl Backend,
-) -> Result<()> {
+pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
     state.shared.control_state = ControlStatus::Running;
 
     let config = state.config.read().unwrap();
-    let cycle_time = config.cycle_time;
+    let cycle_time = config.cycle_time_ns;
     drop(config);
 
     tracing::info!("Starting control loop");

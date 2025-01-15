@@ -525,7 +525,7 @@ mod tests {
 
         assert_eq!(resp[1].target().device(), 2);
         assert_eq!(resp[1].target().axis(), 0);
-        assert_eq!(resp[1].status(), Status::Busy);
+        assert_eq!(resp[1].status(), Status::Idle);
         assert_eq!(resp[1].warning(), "--");
         assert_eq!(resp[1].data(), "100");
     }

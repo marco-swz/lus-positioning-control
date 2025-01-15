@@ -1,4 +1,4 @@
-cycle_time = 500
+cycle_time_ns = 500000
 restart_timeout = 10000
 voltage_min = 0.12
 voltage_max = 2.0
