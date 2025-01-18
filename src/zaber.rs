@@ -5,6 +5,7 @@ use ads1x1x::ic::{Ads1115, Resolution16Bit};
 use ads1x1x::mode::OneShot;
 use ads1x1x::{channel, Ads1x1x};
 use anyhow::{anyhow, Result};
+use evalexpr::{ContextWithMutableVariables, Value};
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
 use linux_embedded_hal::nb::block;
 use zproto::ascii::command::MaxPacketSize;
@@ -61,11 +62,14 @@ where
         let voltage = raw as f64 * 4.069 / 32767.; // 65536.;
         tracing::debug!("voltage read {}", voltage);
 
-        let target_coax = voltage_to_steps(
-            voltage,
-            (self.config.voltage_min, self.config.voltage_max),
-            (self.config.limit_min_coax, self.config.limit_max_coax),
-        );
+        let context = evalexpr::context_map! {
+            "lmin" => Value::Int(self.config.limit_min_coax as i64),
+            "lmax" => Value::Int(self.config.limit_max_coax as i64),
+            "v" => Value::Float(voltage),
+        }?;
+
+        let target_coax_mm = self.config.formula_coax.eval_float_with_context(&context)?;
+        let target_coax = mm_to_steps(target_coax_mm);
 
         let target = match self.target_manual_shared.try_read() {
             Ok(shared) => (target_coax, shared.1),

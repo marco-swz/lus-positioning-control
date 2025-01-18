@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Local};
 use crossbeam_channel::Receiver;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 
 pub type StateChannel = Arc<RwLock<SharedState>>;
@@ -39,6 +39,28 @@ pub struct Config {
     pub limit_min_cross: u32,
     pub maxspeed_cross: f64,
     pub mock_zaber: bool,
+    #[serde(deserialize_with = "deserialize_formula")]
+    #[serde(serialize_with = "serialize_formula")]
+    pub formula_coax: evalexpr::Node,
+    #[serde(deserialize_with = "deserialize_formula")]
+    #[serde(serialize_with = "serialize_formula")]
+    pub formula_cross: evalexpr::Node,
+}
+
+fn serialize_formula<S>(x: &evalexpr::Node, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_str(&x.to_string())
+}
+
+fn deserialize_formula<'de, D>(deserializer: D) -> Result<evalexpr::Node, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let buf = String::deserialize(deserializer)?;
+
+    evalexpr::build_operator_tree(&buf).map_err(serde::de::Error::custom)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

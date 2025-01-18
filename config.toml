@@ -1,7 +1,5 @@
 cycle_time_ns = 10
 restart_timeout = 10000
-voltage_min = 0.12
-voltage_max = 2.0
 serial_device = "/dev/ttyACM0"
 opcua_config_path = "opcua_config.conf"
 control_mode = "Tracking"
