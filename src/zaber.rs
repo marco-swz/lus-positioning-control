@@ -5,7 +5,7 @@ use ads1x1x::ic::{Ads1115, Resolution16Bit};
 use ads1x1x::mode::OneShot;
 use ads1x1x::{channel, Ads1x1x};
 use anyhow::{anyhow, Result};
-use evalexpr::{ContextWithMutableVariables, Value};
+use evalexpr::Value;
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
 use linux_embedded_hal::nb::block;
 use zproto::ascii::command::MaxPacketSize;
@@ -26,8 +26,8 @@ pub struct TrackingBackend<'a, T> {
     config: Config,
     zaber_conn: &'a mut ZaberConn<T>,
     adc: Adc,
-    target_manual: (u32, u32, f64),
-    target_manual_shared: Arc<RwLock<(u32, u32, f64)>>,
+    target_manual: (u32, u32, f64, f64),
+    target_manual_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
 }
 
 impl<'a, T> TrackingBackend<'a, T>
@@ -38,14 +38,14 @@ where
         port: &'a mut ZaberConn<T>,
         config: Config,
         adc: Adc,
-        target_shared: Arc<RwLock<(u32, u32, f64)>>,
+        target_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
     ) -> Result<Self> {
         init_axes(port, &config)?;
         Ok(TrackingBackend {
             config,
             zaber_conn: port,
             adc,
-            target_manual: (0, 0, 0.),
+            target_manual: (0, 0, 0., 0.),
             target_manual_shared: target_shared,
         })
     }
@@ -55,28 +55,32 @@ impl<T> Backend for TrackingBackend<'_, T>
 where
     T: zproto::backend::Backend,
 {
-    fn get_target(&mut self) -> Result<(u32, u32, f64)> {
-        let Ok(raw) = block!(self.adc.read(channel::DifferentialA0A1)) else {
-            return Err(anyhow!("Failed to read from ADC"));
+    fn get_target(&mut self) -> Result<(u32, u32, f64, f64)> {
+        let Ok(raw1) = block!(self.adc.read(channel::DifferentialA0A1)) else {
+            return Err(anyhow!("Failed to read from ADC A0A1"));
         };
-        let voltage = raw as f64 * 4.069 / 32767.; // 65536.;
-        tracing::debug!("voltage read {}", voltage);
+        let voltage1 = raw1 as f64 * 4.069 / 32767.;
+
+        let Ok(raw2) = block!(self.adc.read(channel::DifferentialA2A3)) else {
+            return Err(anyhow!("Failed to read from ADC A2A3"));
+        };
+        let voltage2 = raw2 as f64 * 4.069 / 32767.;
+        tracing::debug!("voltage read {}, {}", voltage1, voltage2);
 
         let context = evalexpr::context_map! {
-            "lmin" => Value::Int(self.config.limit_min_coax as i64),
-            "lmax" => Value::Int(self.config.limit_max_coax as i64),
-            "v" => Value::Float(voltage),
+            "v1" => Value::Float(voltage1),
+            "v2" => Value::Float(voltage2),
         }?;
 
         let target_coax_mm = self.config.formula_coax.eval_float_with_context(&context)?;
         let target_coax = mm_to_steps(target_coax_mm);
+        let target_cross_mm = self
+            .config
+            .formula_cross
+            .eval_float_with_context(&context)?;
+        let target_cross = mm_to_steps(target_cross_mm);
 
-        let target = match self.target_manual_shared.try_read() {
-            Ok(shared) => (target_coax, shared.1),
-            Err(_) => (target_coax, self.target_manual.1),
-        };
-
-        return Ok((target.0, target.1, voltage));
+        return Ok((target_coax, target_cross, voltage1, voltage2));
     }
 
     fn get_pos(&mut self) -> Result<(u32, u32, bool, bool)> {
@@ -94,8 +98,8 @@ where
 
 pub struct ManualBackend<'a, T> {
     zaber_conn: &'a mut ZaberConn<T>,
-    target: (u32, u32, f64),
-    target_shared: Arc<RwLock<(u32, u32, f64)>>,
+    target: (u32, u32, f64, f64),
+    target_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
 }
 
 impl<'a, T> ManualBackend<'a, T>
@@ -105,12 +109,12 @@ where
     pub fn new(
         port: &'a mut ZaberConn<T>,
         config: Config,
-        target_shared: Arc<RwLock<(u32, u32, f64)>>,
+        target_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
     ) -> Result<Self> {
         init_axes(port, &config)?;
         Ok(ManualBackend {
             zaber_conn: port,
-            target: (0, 0, 0.),
+            target: (0, 0, 0., 0.),
             target_shared,
         })
     }
@@ -120,9 +124,9 @@ impl<T> Backend for ManualBackend<'_, T>
 where
     T: zproto::backend::Backend,
 {
-    fn get_target(&mut self) -> Result<(u32, u32, f64)> {
+    fn get_target(&mut self) -> Result<(u32, u32, f64, f64)> {
         let Ok(shared) = self.target_shared.try_read() else {
-            return Ok((self.target.0, self.target.1, 0.));
+            return Ok((self.target.0, self.target.1, 0., 0.));
         };
         self.target = *shared;
 
@@ -306,6 +310,7 @@ pub fn steps_per_sec_to_mm_per_sec(steps_per_sec: f64) -> f64 {
     steps_per_sec * MICROSTEP_SIZE / 1000. / VELOCITY_FACTOR
 }
 
+// TODO(marco): Remove
 pub fn voltage_to_steps(voltage: f64, voltage_range: (f64, f64), pos_range: (u32, u32)) -> u32 {
     return (pos_range.1 as f64
         - (pos_range.1 as f64 - pos_range.0 as f64) / (voltage_range.1 - voltage_range.0)

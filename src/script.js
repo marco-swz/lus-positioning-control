@@ -173,13 +173,12 @@ function connectWebsocketManual() {
         document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position_cross']);
         if (state !== "Running" || gControlMode === 'Tracking') {
             document.querySelector('#inp-pos-coax').value = data['position_coax'];
-        }
-        if (state !== "Running") {
             document.querySelector('#inp-pos-cross').value = data['position_cross'];
         }
         
         if (gControlMode === 'Tracking') {
             document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target_coax']);
+            document.querySelector('#inp-pos-target-cross').value = steps2mm(data['target_cross']);
         }
 
         gErrorMessage = data['error'];
@@ -213,27 +212,19 @@ function connectWebsocketManual() {
         if (state === 'Running') {
             if (gControlMode === 'Tracking') {
                 document.querySelector('#inp-pos-coax').disabled = true;
-                document.querySelector('#inp-pos-min-coax').disabled = true;
-                document.querySelector('#inp-pos-max-coax').disabled = true;
+                document.querySelector('#inp-pos-cross').disabled = true;
+                document.querySelector('#inp-pos-target-coax').disabled = true;
                 document.querySelector('#inp-pos-target-cross').disabled = true;
             } else {
                 document.querySelector('#inp-pos-coax').disabled = false;
-                document.querySelector('#inp-pos-min-coax').disabled = false;
-                document.querySelector('#inp-pos-max-coax').disabled = false;
+                document.querySelector('#inp-pos-cross').disabled = false;
                 document.querySelector('#inp-pos-target-coax').disabled = false;
+                document.querySelector('#inp-pos-target-cross').disabled = false;
             }
-            document.querySelector('#inp-pos-cross').disabled = false;
-            document.querySelector('#inp-pos-min-cross').disabled = false;
-            document.querySelector('#inp-pos-max-cross').disabled = false;
-            document.querySelector('#inp-pos-target-cross').disabled = false;
         } else {
             document.querySelector('#inp-pos-coax').disabled = true;
-            document.querySelector('#inp-pos-min-coax').disabled = true;
-            document.querySelector('#inp-pos-max-coax').disabled = true;
-            document.querySelector('#inp-pos-target-coax').disabled = true;
             document.querySelector('#inp-pos-cross').disabled = true;
-            document.querySelector('#inp-pos-min-cross').disabled = true;
-            document.querySelector('#inp-pos-max-cross').disabled = true;
+            document.querySelector('#inp-pos-target-coax').disabled = true;
             document.querySelector('#inp-pos-target-cross').disabled = true;
         }
     });

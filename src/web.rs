@@ -7,9 +7,9 @@ use std::{
 use anyhow::{anyhow, Result};
 use axum::{
     extract::{
+        self,
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
-        self,
     },
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -35,7 +35,7 @@ pub struct WebState {
     pub zaber_state: Arc<RwLock<SharedState>>,
     pub tx_start_control: Sender<()>,
     pub tx_stop_control: Sender<()>,
-    pub target_manual: Arc<RwLock<(u32, u32, f64)>>,
+    pub target_manual: Arc<RwLock<(u32, u32, f64, f64)>>,
     pub config: Arc<RwLock<utils::Config>>,
     pub opcua_state: Arc<sync::RwLock<ServerState>>,
 }
@@ -97,10 +97,12 @@ fn save_config(config_new: &utils::Config) -> Result<()> {
             Err(anyhow!("error serializing new config: {e}"))
         }
     };
-
 }
 
-async fn handle_post_mode(extract::Path(new_mode): extract::Path<ControlMode>, State(state): State<WebState>) {
+async fn handle_post_mode(
+    extract::Path(new_mode): extract::Path<ControlMode>,
+    State(state): State<WebState>,
+) {
     tracing::debug!("POST mode requested - new mode: {:?}", new_mode);
     let mut config_new = state.config.read().unwrap().clone();
     config_new.control_mode = new_mode.clone();
@@ -113,7 +115,6 @@ async fn handle_post_mode(extract::Path(new_mode): extract::Path<ControlMode>, S
     let _ = state.tx_stop_control.try_send(());
     tracing::debug!("POST mode exit");
 }
-
 
 async fn handle_post_config(State(state): State<WebState>, Form(config_new): Form<utils::Config>) {
     tracing::debug!("POST /config requested");
@@ -189,14 +190,8 @@ fn parse_message(msg: Message) -> Result<(u32, u32)> {
     let msg = msg.to_text()?;
     let mut msg = msg.split_whitespace();
 
-    let val_coax = str::parse::<u32>(
-        msg.next()
-            .ok_or(anyhow!("Missing value"))?
-    )?;
-    let val_cross = str::parse::<u32>(
-        msg.next()
-            .ok_or(anyhow!("Missing value"))?
-    )?;
+    let val_coax = str::parse::<u32>(msg.next().ok_or(anyhow!("Missing value"))?)?;
+    let val_cross = str::parse::<u32>(msg.next().ok_or(anyhow!("Missing value"))?)?;
 
     return Ok((val_coax, val_cross));
 }
@@ -212,19 +207,18 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
                 return; // client disconnected
             };
 
-
             let (val_coax, val_cross) = match parse_message(msg) {
                 Ok(val) => val,
                 Err(e) => {
                     tracing::error!("Error parsing message: {e}");
-                    continue
+                    continue;
                 }
             };
 
             {
                 match state.target_manual.write() {
                     Err(e) => tracing::error!("Failed to aquire manual voltage lock: {e}"),
-                    Ok(mut v) => *v = (val_coax, val_cross, 0.),
+                    Ok(mut v) => *v = (val_coax, val_cross, 0., 0.),
                 };
             }
         }

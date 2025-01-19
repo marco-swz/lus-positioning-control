@@ -26,8 +26,6 @@ pub struct Config {
     pub cycle_time_ns: Duration,
     #[serde_as(as = "serde_with::DurationNanoSeconds<u64>")]
     pub restart_timeout: Duration,
-    pub voltage_min: f64,
-    pub voltage_max: f64,
     pub serial_device: String,
     pub opcua_config_path: PathBuf,
     pub control_mode: ControlMode,
@@ -87,7 +85,7 @@ pub struct SharedState {
     pub target_cross: u32,
     pub position_cross: u32,
     pub position_coax: u32,
-    pub voltage: f64,
+    pub voltage: [f64; 2],
     pub busy_cross: bool,
     pub busy_coax: bool,
     pub control_state: ControlStatus,
@@ -100,6 +98,6 @@ pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
     pub rx_stop: StopChannel,
-    pub target_manual: Arc<RwLock<(u32, u32, f64)>>,
+    pub target_manual: Arc<RwLock<(u32, u32, f64, f64)>>,
     pub config: Arc<RwLock<Config>>,
 }

@@ -10,7 +10,7 @@ use chrono::Local;
 use ftdi_embedded_hal::{libftd2xx, FtHal};
 
 pub trait Backend {
-    fn get_target(&mut self) -> Result<(u32, u32, f64)>;
+    fn get_target(&mut self) -> Result<(u32, u32, f64, f64)>;
     fn get_pos(&mut self) -> Result<(u32, u32, bool, bool)>;
     fn move_coax(&mut self, target: u32) -> Result<()>;
     fn move_cross(&mut self, target: u32) -> Result<()>;
@@ -100,7 +100,7 @@ pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
 
     tracing::info!("Starting control loop");
     loop {
-        let (target_coax, target_cross, voltage) = backend.get_target()?;
+        let (target_coax, target_cross, voltage1, voltage2) = backend.get_target()?;
         state.shared.target_coax = target_coax;
         state.shared.target_cross = target_coax;
 
@@ -109,7 +109,7 @@ pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
         state.shared.position_cross = pos_cross;
         state.shared.busy_coax = busy_coax;
         state.shared.busy_cross = busy_cross;
-        state.shared.voltage = voltage;
+        state.shared.voltage = [voltage1, voltage2];
         state.shared.timestamp = Local::now();
 
         tracing::debug!("Position coax: target={target_coax} actual={pos_coax}");

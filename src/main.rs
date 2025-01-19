@@ -51,7 +51,7 @@ fn main() {
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
-    let target_manual = Arc::new(RwLock::new((0, 0, 0.)));
+    let target_manual = Arc::new(RwLock::new((0, 0, 0., 0.)));
 
     let shared_state = SharedState {
         target_coax: 0,
@@ -63,36 +63,30 @@ fn main() {
         control_state: ControlStatus::Stopped,
         error: None,
         timestamp: Local::now(),
-        voltage: 0.,
+        voltage: [0.; 2],
     };
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
     let mut state = ExecState {
         shared: shared_state.clone(),
-        config: Arc::new(RwLock::new(
-            read_config().unwrap_or(Config {
-                cycle_time_ns: Duration::from_millis(1000),
-                restart_timeout: Duration::from_secs(10),
-                voltage_min: 0.,
-                voltage_max: 8.45,
-                serial_device: "/dev/ttyACM0".to_string(),
-                opcua_config_path: "opcua_config.conf".into(),
-                control_mode: ControlMode::Manual,
-                limit_max_coax: MAX_POS,
-                limit_min_coax: 0,
-                limit_max_cross: MAX_POS,
-                limit_min_cross: 0,
-                maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-                maxspeed_coax: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-                offset_coax: 0,
-                mock_zaber: true,
-                formula_coax: evalexpr::build_operator_tree(
-                    "lmax - (lmax - lmax) / (2 - 0.12) * (v1 - 0.12)",
-                )
-                .unwrap(),
-                formula_cross: evalexpr::build_operator_tree("v2").unwrap(),
-            }),
-        )),
+        config: Arc::new(RwLock::new(read_config().unwrap_or(Config {
+            cycle_time_ns: Duration::from_millis(1000),
+            restart_timeout: Duration::from_secs(10),
+            serial_device: "/dev/ttyACM0".to_string(),
+            opcua_config_path: "opcua_config.conf".into(),
+            control_mode: ControlMode::Manual,
+            limit_max_coax: MAX_POS,
+            limit_min_coax: 0,
+            limit_max_cross: MAX_POS,
+            limit_min_cross: 0,
+            maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+            maxspeed_coax: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+            offset_coax: 0,
+            mock_zaber: true,
+            formula_coax:
+                evalexpr::build_operator_tree("64 - (64 - 17) / (2 - 0.12) * (v1 - 0.12)").unwrap(),
+            formula_cross: evalexpr::build_operator_tree("0").unwrap(),
+        }))),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
         target_manual: Arc::clone(&target_manual),
