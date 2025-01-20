@@ -67,26 +67,29 @@ fn main() {
     };
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
+    let config_default = Config {
+        cycle_time_ns: Duration::from_millis(1000),
+        restart_timeout: Duration::from_secs(10),
+        serial_device: "/dev/ttyACM0".to_string(),
+        opcua_config_path: "opcua_config.conf".into(),
+        control_mode: ControlMode::Manual,
+        limit_max_coax: MAX_POS,
+        limit_min_coax: 0,
+        limit_max_cross: MAX_POS,
+        limit_min_cross: 0,
+        maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+        maxspeed_coax: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+        offset_coax: 0,
+        mock_zaber: true,
+        formula_coax: "64 - (64 - 17) / (2 - 0.12) * (v1 - 0.12)".to_string(),
+        formula_cross: "0".to_string(),
+    };
+
+    let config = read_config().unwrap_or(config_default);
+
     let mut state = ExecState {
         shared: shared_state.clone(),
-        config: Arc::new(RwLock::new(read_config().unwrap_or(Config {
-            cycle_time_ns: Duration::from_millis(1000),
-            restart_timeout: Duration::from_secs(10),
-            serial_device: "/dev/ttyACM0".to_string(),
-            opcua_config_path: "opcua_config.conf".into(),
-            control_mode: ControlMode::Manual,
-            limit_max_coax: MAX_POS,
-            limit_min_coax: 0,
-            limit_max_cross: MAX_POS,
-            limit_min_cross: 0,
-            maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-            maxspeed_coax: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-            offset_coax: 0,
-            mock_zaber: true,
-            formula_coax:
-                evalexpr::build_operator_tree("64 - (64 - 17) / (2 - 0.12) * (v1 - 0.12)").unwrap(),
-            formula_cross: evalexpr::build_operator_tree("0").unwrap(),
-        }))),
+        config: Arc::new(RwLock::new(config.clone())),
         out_channel: Arc::clone(&state_channel),
         rx_stop: rx_stop.clone(),
         target_manual: Arc::clone(&target_manual),

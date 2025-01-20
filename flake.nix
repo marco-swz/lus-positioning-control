@@ -27,6 +27,8 @@
                         openssl.dev
                         rustup
                         libudev-zero
+                        vscode-langservers-extracted
+                        typescript-language-server
                     ];
                 };
             });

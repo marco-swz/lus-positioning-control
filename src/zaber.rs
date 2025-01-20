@@ -23,30 +23,25 @@ pub type ZaberConn<T> = Port<'static, T>;
 pub type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, OneShot>;
 
 pub struct TrackingBackend<'a, T> {
-    config: Config,
     zaber_conn: &'a mut ZaberConn<T>,
     adc: Adc,
-    target_manual: (u32, u32, f64, f64),
-    target_manual_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
+    formula_coax: evalexpr::Node,
+    formula_cross: evalexpr::Node,
 }
 
 impl<'a, T> TrackingBackend<'a, T>
 where
     T: zproto::backend::Backend,
 {
-    pub fn new(
-        port: &'a mut ZaberConn<T>,
-        config: Config,
-        adc: Adc,
-        target_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
-    ) -> Result<Self> {
+    pub fn new(port: &'a mut ZaberConn<T>, config: Config, adc: Adc) -> Result<Self> {
         init_axes(port, &config)?;
+        let formula_cross = config.formula_cross.clone();
+        let formula_coax = config.formula_coax.clone();
         Ok(TrackingBackend {
-            config,
             zaber_conn: port,
             adc,
-            target_manual: (0, 0, 0., 0.),
-            target_manual_shared: target_shared,
+            formula_cross: evalexpr::build_operator_tree(&formula_cross)?,
+            formula_coax: evalexpr::build_operator_tree(&formula_coax)?,
         })
     }
 }
@@ -72,12 +67,9 @@ where
             "v2" => Value::Float(voltage2),
         }?;
 
-        let target_coax_mm = self.config.formula_coax.eval_float_with_context(&context)?;
+        let target_coax_mm = self.formula_coax.eval_float_with_context(&context)?;
         let target_coax = mm_to_steps(target_coax_mm);
-        let target_cross_mm = self
-            .config
-            .formula_cross
-            .eval_float_with_context(&context)?;
+        let target_cross_mm = self.formula_cross.eval_float_with_context(&context)?;
         let target_cross = mm_to_steps(target_cross_mm);
 
         return Ok((target_coax, target_cross, voltage1, voltage2));

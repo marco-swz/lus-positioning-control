@@ -37,12 +37,8 @@ pub struct Config {
     pub limit_min_cross: u32,
     pub maxspeed_cross: f64,
     pub mock_zaber: bool,
-    #[serde(deserialize_with = "deserialize_formula")]
-    #[serde(serialize_with = "serialize_formula")]
-    pub formula_coax: evalexpr::Node,
-    #[serde(deserialize_with = "deserialize_formula")]
-    #[serde(serialize_with = "serialize_formula")]
-    pub formula_cross: evalexpr::Node,
+    pub formula_coax: String,
+    pub formula_cross: String,
 }
 
 fn serialize_formula<S>(x: &evalexpr::Node, s: S) -> Result<S::Ok, S::Error>

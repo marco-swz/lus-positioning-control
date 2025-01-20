@@ -68,7 +68,7 @@ where
 
             utils::ControlMode::Tracking => {
                 let adc = init_adc()?;
-                let backend = TrackingBackend::new(&mut port, config.clone(), adc, target_shared)?;
+                let backend = TrackingBackend::new(&mut port, config.clone(), adc)?;
                 run(state, backend)
             }
         };
