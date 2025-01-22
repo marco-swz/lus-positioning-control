@@ -7,7 +7,7 @@ use std::{
 
 use chrono::{DateTime, Local};
 use crossbeam_channel::Receiver;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 pub type StateChannel = Arc<RwLock<SharedState>>;
@@ -24,8 +24,6 @@ pub enum ControlMode {
 pub struct Config {
     #[serde_as(as = "serde_with::DurationNanoSeconds<u64>")]
     pub cycle_time_ns: Duration,
-    #[serde_as(as = "serde_with::DurationNanoSeconds<u64>")]
-    pub restart_timeout: Duration,
     pub serial_device: String,
     pub opcua_config_path: PathBuf,
     pub control_mode: ControlMode,
@@ -39,22 +37,6 @@ pub struct Config {
     pub mock_zaber: bool,
     pub formula_coax: String,
     pub formula_cross: String,
-}
-
-fn serialize_formula<S>(x: &evalexpr::Node, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    s.serialize_str(&x.to_string())
-}
-
-fn deserialize_formula<'de, D>(deserializer: D) -> Result<evalexpr::Node, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let buf = String::deserialize(deserializer)?;
-
-    evalexpr::build_operator_tree(&buf).map_err(serde::de::Error::custom)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

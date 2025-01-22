@@ -68,8 +68,7 @@ fn main() {
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
     let config_default = Config {
-        cycle_time_ns: Duration::from_millis(1000),
-        restart_timeout: Duration::from_secs(10),
+        cycle_time_ns: Duration::from_millis(500),
         serial_device: "/dev/ttyACM0".to_string(),
         opcua_config_path: "opcua_config.conf".into(),
         control_mode: ControlMode::Manual,
@@ -115,34 +114,28 @@ fn main() {
     *out = shared_state.clone();
     drop(out);
 
-    let mut stopped = true;
     loop {
-        if stopped {
-            state.shared.control_state = ControlStatus::Stopped;
-            {
-                let mut out = state.out_channel.write().unwrap();
-                *out = state.shared.clone();
-            }
-            tracing::debug!("control waiting for start");
-            let _ = rx_start.recv();
-            tracing::debug!("start signal received");
+        state.shared.control_state = ControlStatus::Stopped;
+        {
+            let mut out = state.out_channel.write().unwrap();
+            *out = state.shared.clone();
+        }
+        tracing::debug!("control waiting for start");
+        let _ = rx_start.recv();
+        tracing::debug!("start signal received");
 
-            // There might be more signals in channel,
-            // they need to be cleared.
-            while !state.rx_stop.is_empty() {
-                let _ = state.rx_stop.try_recv();
-            }
-            while !rx_start.is_empty() {
-                let _ = rx_start.try_recv();
-            }
+        // There might be more signals in channel,
+        // they need to be cleared.
+        while !state.rx_stop.is_empty() {
+            let _ = state.rx_stop.try_recv();
+        }
+        while !rx_start.is_empty() {
+            let _ = rx_start.try_recv();
         }
 
         tracing::debug!("trying to init control");
         match init(&mut state) {
-            Ok(_) => {
-                stopped = true;
-                continue;
-            }
+            Ok(_) => (),
             Err(e) => {
                 tracing::error!("control error: {}", &e);
                 state.shared.control_state = ControlStatus::Error;
@@ -153,16 +146,7 @@ fn main() {
                     let mut out = state.out_channel.write().unwrap();
                     *out = state.shared.clone();
                 }
-
-                stopped = false;
             }
-        }
-
-        let restart_timeout = { state.config.read().unwrap().restart_timeout };
-        tracing::debug!("waiting for stop signal");
-        if let Ok(_) = rx_stop.recv_timeout(restart_timeout) {
-            tracing::debug!("stop signal received");
-            stopped = true;
         }
     }
 }
