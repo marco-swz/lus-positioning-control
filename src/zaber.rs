@@ -215,6 +215,10 @@ where
         .flag_ok()?;
 
     zaber_conn
+        .command_reply((1, format!("set accel {}", 10)))?
+        .flag_ok()?;
+
+    zaber_conn
         .command_reply((1, "lockstep 1 setup enable 1 2"))?
         .flag_ok()?;
 
