@@ -231,7 +231,7 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
             let state_json = serde_json::to_string(&state).unwrap();
             sender.send(Message::Text(state_json)).await.unwrap();
 
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
     });
 

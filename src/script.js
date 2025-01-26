@@ -168,7 +168,8 @@ function connectWebsocketManual() {
         const data = JSON.parse(event.data);
         const state = data['control_state'];
 
-        document.querySelector('#inp-voltage').value = data['voltage'];
+        document.querySelector('#inp-voltage1').value = data['voltage'][0];
+        document.querySelector('#inp-voltage2').value = data['voltage'][1];
         document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position_coax']);
         document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position_cross']);
         if (state !== "Running" || gControlMode === 'Tracking') {

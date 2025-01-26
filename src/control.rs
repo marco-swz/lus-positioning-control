@@ -62,7 +62,8 @@ where
 
         let result = match config.control_mode {
             utils::ControlMode::Manual => {
-                let backend = ManualBackend::new(&mut port, config.clone(), target_shared)?;
+                let adc = init_adc()?;
+                let backend = ManualBackend::new(&mut port, adc, config.clone(), target_shared)?;
                 run(state, backend)
             }
 
@@ -118,7 +119,9 @@ pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
         }
 
         tracing::debug!("Position cross: target={target_cross} actual={pos_cross}");
-        if target_cross > pos_cross_min && target_cross < pos_cross_max && target_cross != pos_cross
+        if target_cross >= pos_cross_min
+            && target_cross <= pos_cross_max
+            && target_cross != pos_cross
         {
             backend.move_cross(target_cross)?;
         }
