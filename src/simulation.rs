@@ -12,7 +12,7 @@ pub struct Simulator {
     pub pos: [[u32; 2]; 2],
     pub offset: Option<u32>,
     pub busy: [[bool; 2]; 2],
-    pub vel: [[f64; 2]; 2],
+    pub vel: [[u32; 2]; 2],
     pub time: DateTime<Local>,
     pub target: [[u32; 2]; 2],
     pub limit: [[[u32; 2]; 2]; 2],
@@ -255,7 +255,7 @@ impl Simulator {
         write!(self.buffer, "{}", msg).unwrap();
     }
 
-    fn set_maxspeed(&mut self, device: Option<usize>, vel: f64) {
+    fn set_maxspeed(&mut self, device: Option<usize>, vel: u32) {
         let device = device.unwrap();
         self.vel[device][0] = vel;
         self.vel[device][1] = vel;
@@ -382,18 +382,20 @@ impl io::Write for Simulator {
     }
 }
 
-fn move_axis(pos: u32, target: u32, mut vel: f64, time_step: Duration) -> u32 {
+fn move_axis(pos: u32, target: u32, vel: u32, time_step: Duration) -> u32 {
     if pos == target {
         return target;
     }
+
+    let mut vel: i64 = vel as i64;
 
     if pos > target {
         vel = -vel;
     }
 
     let mut pos_new = (pos as f64
-        + vel * time_step.num_seconds() as f64
-        + vel * time_step.subsec_nanos() as f64 / 1.0e9) as u32;
+        + vel as f64 * time_step.num_seconds() as f64
+        + vel as f64 * time_step.subsec_nanos() as f64 / 1.0e9) as u32;
 
     if pos < target && pos_new > target {
         pos_new = target
@@ -421,23 +423,23 @@ mod tests {
     fn test_move() {
         assert_eq!(
             31,
-            move_axis(20, 100, 2., Duration::new(5, 5e8 as u32).unwrap())
+            move_axis(20, 100, 2, Duration::new(5, 5e8 as u32).unwrap())
         );
         assert_eq!(
             15,
-            move_axis(20, 0, 2., Duration::new(2, 5e7 as u32).unwrap())
+            move_axis(20, 0, 2, Duration::new(2, 5e7 as u32).unwrap())
         );
         assert_eq!(
             25,
-            move_axis(20, 25, 2., Duration::new(5, 5e8 as u32).unwrap())
+            move_axis(20, 25, 2, Duration::new(5, 5e8 as u32).unwrap())
         );
         assert_eq!(
             18,
-            move_axis(20, 18, 2., Duration::new(2, 5e7 as u32).unwrap())
+            move_axis(20, 18, 2, Duration::new(2, 5e7 as u32).unwrap())
         );
         assert_eq!(
             20,
-            move_axis(20, 20, 2., Duration::new(2, 5e7 as u32).unwrap())
+            move_axis(20, 20, 2, Duration::new(2, 5e7 as u32).unwrap())
         );
     }
 

@@ -29,6 +29,15 @@ function handleClickSaveConfig() {
         if (['limit_max_coax', 'limit_min_coax', 'limit_min_cross', 'limit_max_cross'].includes(key)) {
             val = mm2steps(val);
         }
+
+        if (['accel_cross', 'accel_coax'].includes(key)) {
+            val = accel2steps(val);
+        }
+
+        if (['maxspeed_cross', 'maxspeed_coax'].includes(key)) {
+            val = vel2steps(val);
+        }
+
         data[key] = val;
     }
     data['control_mode'] = gControlMode;
@@ -106,6 +115,14 @@ function loadConfig() {
             for (let [key, val] of Object.entries(x)) {
                 if (['limit_max_coax', 'limit_min_coax', 'limit_min_cross', 'limit_max_cross'].includes(key)) {
                     val = steps2mm(val);
+                }
+
+                if (['accel_cross', 'accel_coax'].includes(key)) {
+                    val = steps2accel(val);
+                }
+
+                if (['maxspeed_cross', 'maxspeed_coax'].includes(key)) {
+                    val = steps2vel(val);
                 }
 
                 const $inp = document.querySelector(`[name="${key}"]`);
@@ -247,6 +264,22 @@ function steps2mm(steps) {
 
 function mm2steps(millis) {
     return Math.round(millis * 1000. / MICROSTEP_SIZE);
+}
+
+function steps2vel(steps) {
+    return steps * MICROSTEP_SIZE * 10000 / 1.6384
+}
+
+function vel2steps(accel) {
+    return Math.round(accel * 1000 * 1.6384 / MICROSTEP_SIZE / 10000)
+}
+
+function steps2accel(steps) {
+    return steps * MICROSTEP_SIZE * 10000 / (1.6384)^2
+}
+
+function accel2steps(accel) {
+    return Math.round(accel * 1000 * 1.6384^2 / MICROSTEP_SIZE / 10000)
 }
 
 loadConfig();

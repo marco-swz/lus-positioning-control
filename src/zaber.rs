@@ -17,7 +17,7 @@ use zproto::ascii::{
 pub const MICROSTEP_SIZE: f64 = 0.49609375; //µm
 pub const VELOCITY_FACTOR: f64 = 1.6384;
 pub const MAX_POS: u32 = 201574; // microsteps
-pub const MAX_SPEED: f64 = 153600.; // microsteps/sec
+pub const MAX_SPEED: u32 = 153600; // microsteps/sec
 
 pub type ZaberConn<T> = Port<'static, T>;
 pub type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, OneShot>;
@@ -183,13 +183,7 @@ where
     zaber_conn.poll_until_idle(1, check::flag_ok())?;
 
     zaber_conn
-        .command_reply((
-            1,
-            format!(
-                "set maxspeed {}",
-                mm_per_sec_to_steps_per_sec(config.maxspeed_coax)
-            ),
-        ))?
+        .command_reply((1, format!("set maxspeed {}", config.maxspeed_coax)))?
         .flag_ok()?;
     zaber_conn
         .command_reply((1, format!("set limit.max {}", config.limit_max_coax)))?
@@ -197,15 +191,12 @@ where
     zaber_conn
         .command_reply((1, format!("set limit.min {}", config.limit_min_coax)))?
         .flag_ok()?;
+    zaber_conn
+        .command_reply((1, format!("set accel {}", config.accel_coax)))?
+        .flag_ok()?;
 
     zaber_conn
-        .command_reply((
-            2,
-            format!(
-                "set maxspeed {}",
-                mm_per_sec_to_steps_per_sec(config.maxspeed_cross)
-            ),
-        ))?
+        .command_reply((2, format!("set maxspeed {}", config.maxspeed_cross)))?
         .flag_ok()?;
     zaber_conn
         .command_reply((2, format!("set limit.max {}", config.limit_max_cross)))?
@@ -213,9 +204,8 @@ where
     zaber_conn
         .command_reply((2, format!("set limit.min {}", config.limit_min_cross)))?
         .flag_ok()?;
-
     zaber_conn
-        .command_reply((1, format!("set accel {}", 10)))?
+        .command_reply((2, format!("set accel {}", config.accel_cross)))?
         .flag_ok()?;
 
     zaber_conn
@@ -291,21 +281,6 @@ pub fn steps_to_mm(steps: u32) -> f64 {
 
 pub fn mm_to_steps(millis: f64) -> u32 {
     (millis * 1000. / MICROSTEP_SIZE) as u32
-}
-
-pub fn mm_per_sec_to_steps_per_sec(millis_per_s: f64) -> u32 {
-    (millis_per_s * 1000. * VELOCITY_FACTOR / MICROSTEP_SIZE) as u32
-}
-
-pub fn steps_per_sec_to_mm_per_sec(steps_per_sec: f64) -> f64 {
-    steps_per_sec * MICROSTEP_SIZE / 1000. / VELOCITY_FACTOR
-}
-
-// TODO(marco): Remove
-pub fn voltage_to_steps(voltage: f64, voltage_range: (f64, f64), pos_range: (u32, u32)) -> u32 {
-    return (pos_range.1 as f64
-        - (pos_range.1 as f64 - pos_range.0 as f64) / (voltage_range.1 - voltage_range.0)
-            * (voltage - voltage_range.0)) as u32;
 }
 
 fn read_voltage(adc: &mut Adc) -> Result<[f64; 2]> {

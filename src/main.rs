@@ -3,7 +3,7 @@ use chrono::Local;
 use crossbeam_channel::bounded;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use zaber::{steps_per_sec_to_mm_per_sec, MAX_POS, MAX_SPEED};
+use zaber::{MAX_POS, MAX_SPEED};
 
 mod control;
 use control::init;
@@ -76,8 +76,10 @@ fn main() {
         limit_min_coax: 0,
         limit_max_cross: MAX_POS,
         limit_min_cross: 0,
-        maxspeed_cross: steps_per_sec_to_mm_per_sec(MAX_SPEED),
-        maxspeed_coax: steps_per_sec_to_mm_per_sec(MAX_SPEED),
+        accel_coax: 50,
+        accel_cross: 50,
+        maxspeed_cross: MAX_SPEED,
+        maxspeed_coax: MAX_SPEED,
         offset_coax: 0,
         mock_zaber: true,
         formula_coax: "64 - (64 - 17) / (2 - 0.12) * (v1 - 0.12)".to_string(),
