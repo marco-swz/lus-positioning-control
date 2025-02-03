@@ -208,12 +208,12 @@ function connectWebsocketManual() {
         }
 
         document.querySelector('#control_state').value = state;
-        if (state !== 'Stopped') {
-            $btnStart.hidden = true;
-            $btnStop.hidden = false;
-        } else {
+        if (state !== 'Running') {
             $btnStart.hidden = false;
             $btnStop.hidden = true;
+        } else {
+            $btnStart.hidden = true;
+            $btnStop.hidden = false;
         }
 
         if (data['busy_coax']) {

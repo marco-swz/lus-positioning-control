@@ -1,13 +1,13 @@
-use std::sync::Arc;
-
 use crate::{
     utils::{self, ControlStatus, ExecState},
     zaber::{init_zaber, init_zaber_mock, Adc, ManualBackend, TrackingBackend, ZaberConn},
 };
-use ads1x1x::{Ads1x1x, FullScaleRange, TargetAddr};
+use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use ftdi_embedded_hal::{libftd2xx, FtHal};
+use linux_embedded_hal::nb::block;
+use std::sync::Arc;
 
 pub trait Backend {
     fn get_target(&mut self) -> Result<(u32, u32, f64, f64)>;
@@ -63,13 +63,19 @@ where
         let result = match config.control_mode {
             utils::ControlMode::Manual => {
                 let adc = init_adc()?;
-                let backend = ManualBackend::new(&mut port, adc, config.clone(), target_shared)?;
+                let backend = ManualBackend::new(
+                    &mut port,
+                    adc,
+                    config.clone(),
+                    read_voltage,
+                    target_shared,
+                )?;
                 run(state, backend)
             }
 
             utils::ControlMode::Tracking => {
                 let adc = init_adc()?;
-                let backend = TrackingBackend::new(&mut port, config.clone(), adc)?;
+                let backend = TrackingBackend::new(&mut port, config.clone(), adc, read_voltage)?;
                 run(state, backend)
             }
         };
@@ -89,8 +95,6 @@ where
 }
 
 pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
-    state.shared.control_state = ControlStatus::Running;
-
     let config = state.config.read().unwrap();
     let cycle_time = config.cycle_time_ns;
     let pos_coax_max = config.limit_max_coax;
@@ -143,6 +147,21 @@ pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
     *out = state.shared.clone();
     drop(out);
     return Ok(());
+}
+
+fn read_voltage(adc: &mut Adc) -> Result<[f64; 2]> {
+    let Ok(raw1) = block!(adc.read(channel::DifferentialA0A1)) else {
+        return Err(anyhow!("Failed to read from ADC A0A1"));
+    };
+    let voltage1 = raw1 as f64 * 4.069 / 32767.;
+
+    let Ok(raw2) = block!(adc.read(channel::DifferentialA2A3)) else {
+        return Err(anyhow!("Failed to read from ADC A2A3"));
+    };
+    let voltage2 = raw2 as f64 * 4.069 / 32767.;
+    tracing::debug!("voltage read {}, {}", voltage1, voltage2);
+
+    Ok([voltage1, voltage2])
 }
 
 #[cfg(test)]

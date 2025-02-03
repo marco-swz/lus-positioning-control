@@ -116,8 +116,8 @@ fn main() {
     *out = shared_state.clone();
     drop(out);
 
+    state.shared.control_state = ControlStatus::Stopped;
     loop {
-        state.shared.control_state = ControlStatus::Stopped;
         {
             let mut out = state.out_channel.write().unwrap();
             *out = state.shared.clone();
@@ -133,6 +133,13 @@ fn main() {
         }
         while !rx_start.is_empty() {
             let _ = rx_start.try_recv();
+        }
+
+        state.shared.control_state = ControlStatus::Running;
+        state.shared.timestamp = Local::now();
+        {
+            let mut out = state.out_channel.write().unwrap();
+            *out = state.shared.clone();
         }
 
         tracing::debug!("trying to init control");

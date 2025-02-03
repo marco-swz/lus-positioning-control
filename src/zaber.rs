@@ -3,11 +3,10 @@ use std::sync::{Arc, RwLock};
 use crate::{control::Backend, simulation::Simulator, utils::Config};
 use ads1x1x::ic::{Ads1115, Resolution16Bit};
 use ads1x1x::mode::OneShot;
-use ads1x1x::{channel, Ads1x1x};
+use ads1x1x::Ads1x1x;
 use anyhow::{anyhow, Result};
 use evalexpr::Value;
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
-use linux_embedded_hal::nb::block;
 use zproto::ascii::command::MaxPacketSize;
 use zproto::ascii::{
     response::{check, Status},
@@ -22,44 +21,51 @@ pub const MAX_SPEED: u32 = 153600; // microsteps/sec
 pub type ZaberConn<T> = Port<'static, T>;
 pub type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, OneShot>;
 
-pub struct TrackingBackend<'a, T> {
+pub struct TrackingBackend<'a, T, U> {
     zaber_conn: &'a mut ZaberConn<T>,
-    adc: Adc,
+    fn_voltage: fn(&mut U) -> Result<[f64; 2]>,
+    adc: U,
     formula_coax: evalexpr::Node,
     formula_cross: evalexpr::Node,
 }
 
-impl<'a, T> TrackingBackend<'a, T>
+impl<'a, T, U> TrackingBackend<'a, T, U>
 where
     T: zproto::backend::Backend,
 {
-    pub fn new(port: &'a mut ZaberConn<T>, config: Config, adc: Adc) -> Result<Self> {
+    pub fn new(
+        port: &'a mut ZaberConn<T>,
+        config: Config,
+        adc: U,
+        fn_voltage: fn(&mut U) -> Result<[f64; 2]>,
+    ) -> Result<Self> {
         init_axes(port, &config)?;
         let formula_cross = config.formula_cross.clone();
         let formula_coax = config.formula_coax.clone();
         Ok(TrackingBackend {
             zaber_conn: port,
             adc,
+            fn_voltage,
             formula_cross: evalexpr::build_operator_tree(&formula_cross)?,
             formula_coax: evalexpr::build_operator_tree(&formula_coax)?,
         })
     }
 }
 
-impl<T> Backend for TrackingBackend<'_, T>
+impl<T, U> Backend for TrackingBackend<'_, T, U>
 where
     T: zproto::backend::Backend,
 {
     fn get_target(&mut self) -> Result<(u32, u32, f64, f64)> {
-        let voltage = read_voltage(&mut self.adc)?;
+        let voltage = (self.fn_voltage)(&mut self.adc)?;
         let context = evalexpr::context_map! {
             "v1" => Value::Float(voltage[0]),
             "v2" => Value::Float(voltage[1]),
         }?;
 
-        let target_coax_mm = self.formula_coax.eval_float_with_context(&context)?;
+        let target_coax_mm = self.formula_coax.eval_number_with_context(&context)?;
         let target_coax = mm_to_steps(target_coax_mm);
-        let target_cross_mm = self.formula_cross.eval_float_with_context(&context)?;
+        let target_cross_mm = self.formula_cross.eval_number_with_context(&context)?;
         let target_cross = mm_to_steps(target_cross_mm);
 
         return Ok((target_coax, target_cross, voltage[0], voltage[1]));
@@ -78,26 +84,29 @@ where
     }
 }
 
-pub struct ManualBackend<'a, T> {
+pub struct ManualBackend<'a, T, U> {
     zaber_conn: &'a mut ZaberConn<T>,
-    adc: Adc,
+    adc: U,
+    fn_voltage: fn(&mut U) -> Result<[f64; 2]>,
     target: (u32, u32, f64, f64),
     target_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
 }
 
-impl<'a, T> ManualBackend<'a, T>
+impl<'a, T, U> ManualBackend<'a, T, U>
 where
     T: zproto::backend::Backend,
 {
     pub fn new(
         port: &'a mut ZaberConn<T>,
-        adc: Adc,
+        adc: U,
         config: Config,
+        fn_voltage: fn(&mut U) -> Result<[f64; 2]>,
         target_shared: Arc<RwLock<(u32, u32, f64, f64)>>,
     ) -> Result<Self> {
         init_axes(port, &config)?;
         Ok(ManualBackend {
             zaber_conn: port,
+            fn_voltage,
             adc,
             target: (0, 0, 0., 0.),
             target_shared,
@@ -105,12 +114,12 @@ where
     }
 }
 
-impl<T> Backend for ManualBackend<'_, T>
+impl<T, U> Backend for ManualBackend<'_, T, U>
 where
     T: zproto::backend::Backend,
 {
     fn get_target(&mut self) -> Result<(u32, u32, f64, f64)> {
-        let voltage = read_voltage(&mut self.adc)?;
+        let voltage = (self.fn_voltage)(&mut self.adc)?;
         let Ok(shared) = self.target_shared.try_read() else {
             return Ok((self.target.0, self.target.1, voltage[0], voltage[1]));
         };
@@ -281,19 +290,4 @@ pub fn steps_to_mm(steps: u32) -> f64 {
 
 pub fn mm_to_steps(millis: f64) -> u32 {
     (millis * 1000. / MICROSTEP_SIZE) as u32
-}
-
-fn read_voltage(adc: &mut Adc) -> Result<[f64; 2]> {
-    let Ok(raw1) = block!(adc.read(channel::DifferentialA0A1)) else {
-        return Err(anyhow!("Failed to read from ADC A0A1"));
-    };
-    let voltage1 = raw1 as f64 * 4.069 / 32767.;
-
-    let Ok(raw2) = block!(adc.read(channel::DifferentialA2A3)) else {
-        return Err(anyhow!("Failed to read from ADC A2A3"));
-    };
-    let voltage2 = raw2 as f64 * 4.069 / 32767.;
-    tracing::debug!("voltage read {}, {}", voltage1, voltage2);
-
-    Ok([voltage1, voltage2])
 }
