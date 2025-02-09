@@ -1,0 +1,10 @@
+[package]
+links = "libssl"
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["--verbose", "-C", "target-feature=+crt-static"]
+
+[target.x86_64-pc-windows-msvc.libssl]
+rustc-link-lib = ["libssl"]
+rustc-link-search = ["$OPENSSL_LIB_DIR"]
+rustc-flags = "-L $OPENSSL_LIB_DIR"

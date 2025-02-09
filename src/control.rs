@@ -6,7 +6,7 @@ use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use ftdi_embedded_hal::{libftd2xx, FtHal};
-use linux_embedded_hal::nb::block;
+use nb::block;
 use std::sync::Arc;
 
 pub trait Backend {

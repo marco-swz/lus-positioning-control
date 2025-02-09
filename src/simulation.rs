@@ -325,6 +325,12 @@ impl io::Write for Simulator {
                 write!(self.buffer, "@01 0 OK BUSY -- 0\r\n@02 0 OK BUSY -- 0\r\n").unwrap()
             }
             b"lockstep 1 setup enable 1 2\n" => self.lockstep_enable(),
+            s if s.starts_with(b"set accel ") => write!(
+                self.buffer,
+                "{}",
+                format!("@0{} 0 OK BUSY -- 0\r\n", device.unwrap() + 1)
+            )
+            .unwrap(),
             s if s.starts_with(b"lockstep 1 move abs") => self.move_abs(
                 device,
                 axis,
