@@ -8,6 +8,7 @@ use anyhow::{anyhow, Result};
 use evalexpr::Value;
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
 use zproto::ascii::command::MaxPacketSize;
+use zproto::ascii::port::OpenGeneralOptions;
 use zproto::ascii::{
     response::{check, Status},
     Port,
@@ -144,12 +145,7 @@ where
 
 pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
     let sim = Simulator::new();
-    return Ok(Port::from_backend(
-        sim,
-        false,
-        false,
-        MaxPacketSize::default(),
-    ));
+    return Ok(OpenGeneralOptions::new().open(sim));
 }
 
 pub fn init_zaber(
