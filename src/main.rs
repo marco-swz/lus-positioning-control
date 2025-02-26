@@ -67,26 +67,7 @@ fn main() {
     };
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
-    let config_default = Config {
-        cycle_time_ns: Duration::from_millis(500),
-        serial_device: "/dev/ttyACM0".to_string(),
-        opcua_config_path: "opcua_config.conf".into(),
-        control_mode: ControlMode::Manual,
-        limit_max_coax: MAX_POS,
-        limit_min_coax: 0,
-        limit_max_cross: MAX_POS,
-        limit_min_cross: 0,
-        accel_coax: 50,
-        accel_cross: 50,
-        maxspeed_cross: MAX_SPEED,
-        maxspeed_coax: MAX_SPEED,
-        offset_coax: 0,
-        mock_zaber: true,
-        formula_coax: "64 - (64 - 17) / (2 - 0.12) * (v1 - 0.12)".to_string(),
-        formula_cross: "0".to_string(),
-    };
-
-    let config = read_config().unwrap_or(config_default);
+    let config = read_config().unwrap_or(Config::default());
 
     let mut state = ExecState {
         shared: shared_state.clone(),

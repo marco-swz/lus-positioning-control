@@ -10,6 +10,8 @@ use crossbeam_channel::Receiver;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
+use crate::zaber::{MAX_POS, MAX_SPEED};
+
 pub type StateChannel = Arc<RwLock<SharedState>>;
 pub type StopChannel = Receiver<()>;
 
@@ -19,26 +21,136 @@ pub enum ControlMode {
     Manual,
 }
 
+fn default_serial_device() -> String {
+    "/dev/ttyACM0".into()
+}
+
+fn default_opcua_config_path() -> PathBuf {
+    "opcua_config.conf".into()
+}
+
+fn default_limit_max_coax() -> u32 {
+    MAX_POS
+}
+
+fn default_limit_min_coax() -> u32 {
+    0
+}
+
+fn default_maxspeed_coax() -> u32 {
+    MAX_SPEED
+}
+
+fn default_accel_coax() -> u32 {
+    50
+}
+
+fn default_control_mode() -> ControlMode {
+    ControlMode::Manual
+}
+
+fn default_offset_coax() -> i32 {
+    0
+}
+
+fn default_limit_max_cross() -> u32 {
+    MAX_POS
+}
+
+fn default_limit_min_cross() -> u32 {
+    0
+}
+
+fn default_maxspeed_cross() -> u32 {
+    MAX_SPEED
+}
+
+fn default_accel_cross() -> u32 {
+    50
+}
+
+fn default_mock_zaber() -> bool {
+    false
+}
+
+fn default_formula_coax() -> String {
+    "64 - (64 - 17) / (2 - 0.12) * (v1 - 0.12)".into()
+}
+
+fn default_formula_cross() -> String {
+    "0".into()
+}
+
+fn default_web_port() -> u32 {
+    8085
+}
+
+fn default_cycle_time_ns() -> Duration {
+    Duration::from_millis(500)
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     #[serde_as(as = "serde_with::DurationNanoSeconds<u64>")]
+    #[serde(default = "default_cycle_time_ns")]
     pub cycle_time_ns: Duration,
+    #[serde(default = "default_serial_device")]
     pub serial_device: String,
+    #[serde(default = "default_opcua_config_path")]
     pub opcua_config_path: PathBuf,
+    #[serde(default = "default_control_mode")]
     pub control_mode: ControlMode,
+    #[serde(default = "default_limit_max_coax")]
     pub limit_max_coax: u32,
+    #[serde(default = "default_limit_min_coax")]
     pub limit_min_coax: u32,
+    #[serde(default = "default_maxspeed_coax")]
     pub maxspeed_coax: u32,
+    #[serde(default = "default_accel_coax")]
     pub accel_coax: u32,
+    #[serde(default = "default_offset_coax")]
     pub offset_coax: i32,
+    #[serde(default = "default_limit_max_cross")]
     pub limit_max_cross: u32,
+    #[serde(default = "default_limit_min_cross")]
     pub limit_min_cross: u32,
+    #[serde(default = "default_maxspeed_cross")]
     pub maxspeed_cross: u32,
+    #[serde(default = "default_accel_cross")]
     pub accel_cross: u32,
+    #[serde(default = "default_mock_zaber")]
     pub mock_zaber: bool,
+    #[serde(default = "default_formula_coax")]
     pub formula_coax: String,
+    #[serde(default = "default_formula_cross")]
     pub formula_cross: String,
+    #[serde(default = "default_web_port")]
+    pub web_port: u32,
+}
+
+impl Config {
+    pub fn default() -> Self {
+        Self {
+            cycle_time_ns: default_cycle_time_ns(),
+            serial_device: default_serial_device(),
+            opcua_config_path: default_opcua_config_path(),
+            control_mode: default_control_mode(),
+            limit_max_coax: default_limit_max_coax(),
+            limit_min_coax: default_limit_min_coax(),
+            limit_max_cross: default_limit_max_cross(),
+            limit_min_cross: default_limit_min_cross(),
+            accel_coax: default_accel_coax(),
+            accel_cross: default_accel_cross(),
+            maxspeed_cross: default_maxspeed_coax(),
+            maxspeed_coax: default_maxspeed_coax(),
+            offset_coax: default_offset_coax(),
+            mock_zaber: default_mock_zaber(),
+            formula_coax: default_formula_coax(),
+            formula_cross: default_formula_cross(),
+            web_port: default_web_port(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

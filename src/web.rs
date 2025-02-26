@@ -260,6 +260,8 @@ pub fn run_web_server(state: WebState) {
         .build()
         .unwrap();
 
+    let config = { state.config.read().unwrap().clone() };
+
     let app: Router<_> = Router::new()
         .route("/", get(handle_default))
         .route("/refresh", get(handle_refresh))
@@ -281,9 +283,11 @@ pub fn run_web_server(state: WebState) {
         .route("/ws", get(handle_manual_init))
         .with_state(state);
 
-    tracing::info!("Starting webserver on port 8080");
+    tracing::info!("Starting webserver on port {}", config.web_port);
     let _ = rt.block_on(async {
-        let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", config.web_port))
+            .await
+            .unwrap();
         axum::serve(listener, app).await.unwrap();
     });
 }
