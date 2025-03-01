@@ -40,11 +40,17 @@ pub struct WebState {
     pub opcua_state: Arc<sync::RwLock<ServerState>>,
 }
 
-async fn handle_default() -> Html<String> {
+async fn handle_default(State(state): State<WebState>) -> Html<String> {
     tracing::debug!("GET / requested");
+    let config = { state.config.read().unwrap() };
+
     Html(format!(
         "
 <head>
+    <script>
+        var PORT = {};
+        var IP_ADDR = 'localhost';
+    </script>
     <style>
         {}
     </style>
@@ -56,7 +62,7 @@ async fn handle_default() -> Html<String> {
     </script>
 </body>
     ",
-        STYLE, BODY, SCRIPT,
+        config.web_port, STYLE, BODY, SCRIPT,
     ))
 }
 
@@ -264,6 +270,7 @@ pub fn run_web_server(state: WebState) {
 
     let app: Router<_> = Router::new()
         .route("/", get(handle_default))
+        .with_state(state.clone())
         .route("/refresh", get(handle_refresh))
         .with_state(state.clone())
         .route("/config", post(handle_post_config))

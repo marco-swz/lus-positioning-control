@@ -177,7 +177,7 @@ function handleClickChangeMode() {
 }
 
 function connectWebsocketManual() {
-    gSocket = new WebSocket('ws://localhost:8080/ws');
+    gSocket = new WebSocket(`ws://${IP_ADDR}:${PORT}/ws`);
     let $btnStart = document.querySelector('#btn-start');
     let $btnStop = document.querySelector('#btn-stop');
 

@@ -319,7 +319,6 @@ impl io::Write for Simulator {
         match buf.get(command_slice).unwrap_or(b"") {
             b"" => self.poll(device),
             b"get pos\n" => self.get_pos(),
-            b"system restore\n" => self.system_restore(),
             b"home\n" => self.home(),
             b"set comm.alert 0\n" => {
                 write!(self.buffer, "@01 0 OK BUSY -- 0\r\n@02 0 OK BUSY -- 0\r\n").unwrap()
@@ -336,6 +335,7 @@ impl io::Write for Simulator {
                 axis,
                 str::from_utf8(&s[20..]).unwrap().trim().parse().unwrap(),
             ),
+            s if s.starts_with(b"system restore") => self.system_restore(),
             s if s.starts_with(b"move abs") => self.move_abs(
                 device,
                 axis,
