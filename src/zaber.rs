@@ -7,7 +7,6 @@ use ads1x1x::Ads1x1x;
 use anyhow::{anyhow, Result};
 use evalexpr::Value;
 use ftdi_embedded_hal::{libftd2xx::Ft232h, I2c};
-use zproto::ascii::command::MaxPacketSize;
 use zproto::ascii::port::OpenGeneralOptions;
 use zproto::ascii::{
     response::{check, Status},
@@ -15,7 +14,7 @@ use zproto::ascii::{
 };
 
 pub const MICROSTEP_SIZE: f64 = 0.49609375; //µm
-pub const VELOCITY_FACTOR: f64 = 1.6384;
+                                            // pub const VELOCITY_FACTOR: f64 = 1.6384;
 pub const MAX_POS: u32 = 201574; // microsteps
 pub const MAX_SPEED: u32 = 153600; // microsteps/sec
 
@@ -145,7 +144,10 @@ where
 
 pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
     let sim = Simulator::new();
-    return Ok(OpenGeneralOptions::new().open(sim));
+    let mut opt = OpenGeneralOptions::new();
+    opt.checksums(false);
+    opt.message_ids(false);
+    return Ok(opt.open(sim));
 }
 
 pub fn init_zaber(

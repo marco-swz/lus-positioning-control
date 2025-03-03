@@ -1415,9 +1415,9 @@ dependencies = [
 
 [[package]]
 name = "serialport"
-version = "4.6.0"
+version = "4.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7331eefcaafaa382c0df95bcd84068f0b3e3c215c300750dde2316e9b8806ed5"
+checksum = "5ecfc4858c2266c7695d8b8460bbd612fa81bd2e250f5f0dd16195e4b4f8b3d8"
 dependencies = [
  "bitflags 2.6.0",
  "cfg-if",
@@ -2184,8 +2184,9 @@ dependencies = [
 
 [[package]]
 name = "zproto"
-version = "0.4.1-pre"
-source = "git+https://github.com/stphnt/zproto.git?rev=a578a89ed4441de088694821e7c1dbe134665578#a578a89ed4441de088694821e7c1dbe134665578"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db6cd2f843a588565e3a78520162a76154fcf7a0b7050c206967dc405b5a85d9"
 dependencies = [
  "log",
  "paste",

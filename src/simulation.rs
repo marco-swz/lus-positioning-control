@@ -303,79 +303,55 @@ impl io::Write for Simulator {
 
         self.step(Local::now().signed_duration_since(self.time));
 
-        let (device, axis, command_slice) =
-            match str::from_utf8(&buf[1..2]).unwrap().parse::<usize>() {
-                Err(_) => (None, None, 1..),
-                Ok(d) => match str::from_utf8(&buf.get(3..4).unwrap_or(b"0"))
-                    .unwrap()
-                    .parse::<usize>()
-                {
-                    Err(_) => (Some(d - 1), None, 3..),
-                    Ok(0) => (Some(d - 1), None, 6..),
-                    Ok(a) => (Some(d - 1), Some(a - 1), 6..),
-                },
-            };
+        let msg = str::from_utf8(&buf).unwrap()[1..].to_string();
+        let msg: Vec<&str> = msg.split_whitespace().collect();
 
-        match buf.get(command_slice).unwrap_or(b"") {
-            b"" => self.poll(device),
-            b"get pos\n" => self.get_pos(),
-            b"home\n" => self.home(),
-            b"set comm.alert 0\n" => {
+        let (device, axis, command) = match msg[0].parse::<usize>() {
+            Err(_) => (None, None, msg.join(" ")),
+            Ok(0) => (None, None, msg[3..].join(" ")),
+            Ok(d) => match msg[1].parse::<usize>() {
+                Err(_) => (Some(d - 1), None, msg[1..].join(" ")),
+                Ok(0) => (Some(d - 1), None, msg[2..].join(" ")),
+                Ok(a) => (Some(d - 1), Some(a - 1), msg[2..].join(" ")),
+            },
+        };
+
+        let command = command.split(":").next().unwrap();
+        let command = command.trim();
+
+        match &command[..] {
+            "" => self.poll(device),
+            "get pos" => self.get_pos(),
+            "home" => self.home(),
+            "set comm.alert 0" => {
                 write!(self.buffer, "@01 0 OK BUSY -- 0\r\n@02 0 OK BUSY -- 0\r\n").unwrap()
             }
-            b"lockstep 1 setup enable 1 2\n" => self.lockstep_enable(),
-            s if s.starts_with(b"set accel ") => write!(
+            "lockstep 1 setup enable 1 2" => self.lockstep_enable(),
+            s if s.starts_with("set accel ") => write!(
                 self.buffer,
                 "{}",
                 format!("@0{} 0 OK BUSY -- 0\r\n", device.unwrap() + 1)
             )
             .unwrap(),
-            s if s.starts_with(b"lockstep 1 move abs") => self.move_abs(
-                device,
-                axis,
-                str::from_utf8(&s[20..]).unwrap().trim().parse().unwrap(),
-            ),
-            s if s.starts_with(b"system restore") => self.system_restore(),
-            s if s.starts_with(b"move abs") => self.move_abs(
-                device,
-                axis,
-                str::from_utf8(&s[9..]).unwrap().trim().parse().unwrap(),
-            ),
-            s if s.starts_with(b"move rel") => {
-                self.move_rel(
-                    device,
-                    axis,
-                    str::from_utf8(&s[9..]).unwrap().trim().parse().unwrap(),
-                );
+            s if s.starts_with("lockstep 1 move abs") => {
+                self.move_abs(device, axis, command[20..].parse().unwrap())
             }
-            s if s.starts_with(b"set limit.max") => self.set_limit(
-                device,
-                axis,
-                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
-                true,
-            ),
-            s if s.starts_with(b"set maxspeed") => self.set_maxspeed(
-                device,
-                str::from_utf8(&s[13..]).unwrap().trim().parse().unwrap(),
-            ),
-            s if s.starts_with(b"set limit.max") => self.set_limit(
-                device,
-                axis,
-                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
-                true,
-            ),
-            s if s.starts_with(b"set limit.min") => self.set_limit(
-                device,
-                axis,
-                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
-                false,
-            ),
-            s if s.starts_with(b"set limit.min") => self.set_limit(
-                device,
-                axis,
-                str::from_utf8(&s[14..]).unwrap().trim().parse().unwrap(),
-                false,
-            ),
+            s if s.starts_with("system restore") => self.system_restore(),
+            s if s.starts_with("move abs") => {
+                self.move_abs(device, axis, command[9..].parse().unwrap())
+            }
+            s if s.starts_with("move rel") => {
+                self.move_rel(device, axis, command[9..].parse().unwrap());
+            }
+            s if s.starts_with("set maxspeed") => {
+                self.set_maxspeed(device, command[13..].parse().unwrap())
+            }
+            s if s.starts_with("set limit.max") => {
+                self.set_limit(device, axis, command[14..].parse().unwrap(), true)
+            }
+            s if s.starts_with("set limit.min") => {
+                self.set_limit(device, axis, command[14..].parse().unwrap(), false)
+            }
             _ => panic!("unexpected message: {:?}", str::from_utf8(buf).unwrap()),
         };
 
@@ -415,14 +391,11 @@ fn move_axis(pos: u32, target: u32, vel: u32, time_step: Duration) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::zaber::ZaberConn;
-
     use super::{move_axis, Simulator};
     use chrono::Duration;
     use zproto::ascii::{
-        command::MaxPacketSize,
+        port::OpenGeneralOptions,
         response::{check, Status},
-        Port,
     };
 
     #[test]
@@ -457,8 +430,10 @@ mod tests {
         sim.target = [[2000, 2000], [100, 0]];
         sim.busy = [[false, false], [true, false]];
 
-        let mut port: ZaberConn<Simulator> =
-            Port::from_backend(sim, false, false, MaxPacketSize::default());
+        let mut opt = OpenGeneralOptions::new();
+        opt.checksums(false);
+        opt.message_ids(false);
+        let mut port = opt.open(sim);
         let resp = port
             .command_reply((2, "move abs 3000"))
             .unwrap()
@@ -488,8 +463,10 @@ mod tests {
         sim.target = [[2000, 2000], [100, 0]];
         sim.busy = [[false, false], [true, false]];
 
-        let mut port: ZaberConn<Simulator> =
-            Port::from_backend(sim, false, false, MaxPacketSize::default());
+        let mut opt = OpenGeneralOptions::new();
+        opt.checksums(false);
+        opt.message_ids(false);
+        let mut port = opt.open(sim);
         let resp = port
             .command_reply((1, "move rel 50"))
             .unwrap()
@@ -519,8 +496,10 @@ mod tests {
         sim.target = [[2000, 2000], [100, 0]];
         sim.busy = [[false, false], [true, false]];
 
-        let mut port: ZaberConn<Simulator> =
-            Port::from_backend(sim, false, false, MaxPacketSize::default());
+        let mut opt = OpenGeneralOptions::new();
+        opt.checksums(false);
+        opt.message_ids(false);
+        let mut port = opt.open(sim);
         let resp = port
             .command_reply_n("get pos", 2, check::flag_ok())
             .unwrap();
@@ -545,8 +524,10 @@ mod tests {
         sim.pos = [[2000, 2000], [100, 0]];
         sim.target = [[2000, 2000], [100, 0]];
 
-        let mut port: ZaberConn<Simulator> =
-            Port::from_backend(sim, false, false, MaxPacketSize::default());
+        let mut opt = OpenGeneralOptions::new();
+        opt.checksums(false);
+        opt.message_ids(false);
+        let mut port = opt.open(sim);
         let _ = port
             .command_reply((1, "set limit.max 2500"))
             .unwrap()
