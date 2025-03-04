@@ -309,10 +309,13 @@ impl io::Write for Simulator {
         let (device, axis, command) = match msg[0].parse::<usize>() {
             Err(_) => (None, None, msg.join(" ")),
             Ok(0) => (None, None, msg[3..].join(" ")),
-            Ok(d) => match msg[1].parse::<usize>() {
-                Err(_) => (Some(d - 1), None, msg[1..].join(" ")),
-                Ok(0) => (Some(d - 1), None, msg[2..].join(" ")),
-                Ok(a) => (Some(d - 1), Some(a - 1), msg[2..].join(" ")),
+            Ok(d) => match msg.get(1) {
+                None => (Some(d - 1), None, "".into()),
+                Some(ax) => match ax.parse::<usize>() {
+                    Err(_) => (Some(d - 1), None, msg[1..].join(" ")),
+                    Ok(0) => (Some(d - 1), None, msg[2..].join(" ")),
+                    Ok(a) => (Some(d - 1), Some(a - 1), msg[2..].join(" ")),
+                },
             },
         };
 
