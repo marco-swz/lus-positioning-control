@@ -267,11 +267,11 @@ function mm2steps(millis) {
 }
 
 function steps2vel(steps) {
-    return steps * MICROSTEP_SIZE * 10000 / 1.6384
+    return steps * MICROSTEP_SIZE / 1.6384
 }
 
 function vel2steps(accel) {
-    return Math.round(accel * 1000 * 1.6384 / MICROSTEP_SIZE / 10000)
+    return Math.round(accel * 1000 * 1.6384 / MICROSTEP_SIZE)
 }
 
 function steps2accel(steps) {

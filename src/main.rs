@@ -2,8 +2,6 @@ use anyhow::Result;
 use chrono::Local;
 use crossbeam_channel::bounded;
 use std::sync::{Arc, RwLock};
-use std::time::Duration;
-use zaber::{MAX_POS, MAX_SPEED};
 
 mod control;
 use control::init;
@@ -14,7 +12,7 @@ mod opcua;
 use opcua::run_opcua;
 
 mod utils;
-use utils::{Config, ControlMode, ControlStatus, ExecState, SharedState};
+use utils::{Config, ControlStatus, ExecState, SharedState};
 
 mod web;
 use web::{run_web_server, WebState};
