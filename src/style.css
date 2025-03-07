@@ -59,7 +59,7 @@ select {
 }
 
 .content {
-    width: 600px;
+    width: 1300px;
     display: none;
     padding: 20px 10px;
     border-top: 1px solid darkgrey;
@@ -84,10 +84,15 @@ select {
 
 #tabs {
     display: flex;
+    font-weight: 500;
 }
 
 form {
     margin-bottom: 0;
+}
+
+#form-config, #form-opcua {
+    width: 600px;
 }
 
 .tab {
@@ -127,9 +132,14 @@ input[type=range]:disabled {
     cursor: not-allowed;
 }
 
+input[type=range][orient=vertical] {
+    writing-mode: vertical-rl;
+    direction: rtl;
+}
+
 #cont-ctrl-top {
     display: flex;
-    height: 300px;
+    height: 700px;
     justify-content: space-between;
 
     & #cont-slider-cross {
@@ -158,7 +168,7 @@ input[type=range]:disabled {
 }
 
 #cont-ctrl-bottom {
-    width: 510px;
+    width: 1200px;
 
     & input[type=range] {
         width: 100%;
