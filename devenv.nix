@@ -21,6 +21,7 @@ in {
     vscode-langservers-extracted
     typescript-language-server
     bashInteractive
+    cargo-flamegraph
   ];
 
   languages.rust = {

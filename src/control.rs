@@ -166,49 +166,71 @@ fn read_voltage(adc: &mut Adc) -> Result<[f64; 2]> {
 
 #[cfg(test)]
 mod tests {
-    /*
-    use zproto::ascii::Port;
+    use std::{sync::RwLock, time::Duration};
+
+    use crossbeam_channel::bounded;
+    use utils::{Config, SharedState};
 
     use super::*;
 
-
     fn prepare_state() -> ExecState {
+        let (tx_stop, rx_stop) = bounded::<()>(1);
+        let (tx_start, rx_start) = bounded::<()>(1);
+        let target_manual = Arc::new(RwLock::new((0, 0, 0., 0.)));
+        let shared_state = SharedState {
+            target_coax: 0,
+            target_cross: 0,
+            position_cross: 0,
+            position_coax: 0,
+            busy_cross: false,
+            busy_coax: false,
+            control_state: ControlStatus::Stopped,
+            error: None,
+            timestamp: Local::now(),
+            voltage: [0.; 2],
+        };
+        let state_channel = Arc::new(RwLock::new(shared_state.clone()));
+
         let state = ExecState {
-            shared: SharedState {
-                voltage_gleeble: 0.,
-                position_cross: 0.,
-                position_coax: 0.,
-                busy_cross: false,
-                busy_coax: false,
-                control_state: ControlState::Init,
-                error: None,
-            },
-            config: Config {
-                cycle_time_ms: 1000,
-                voltage_min: 5.,
-                voltage_max: 100.,
+            shared: shared_state,
+            config: Arc::new(RwLock::new(Config {
                 serial_device: "".to_string(),
-            },
-            out_channel: Arc::new(ArrayQueue::new(1)),
-            stop_channel: Arc::new((Mutex::new(false), Condvar::new())),
+                cycle_time_ns: Duration::from_millis(1),
+                opcua_config_path: "".into(),
+                control_mode: utils::ControlMode::Tracking,
+                limit_max_coax: 1000,
+                limit_min_coax: 0,
+                maxspeed_coax: 10000,
+                accel_coax: 10000,
+                offset_coax: 0,
+                limit_max_cross: 1000,
+                limit_min_cross: 0,
+                maxspeed_cross: 10000,
+                accel_cross: 100000,
+                mock_zaber: true,
+                formula_coax: "".into(),
+                formula_cross: "".into(),
+                web_port: 0,
+            })),
+            rx_stop,
+            target_manual,
+            out_channel: state_channel,
         };
 
         return state;
     }
 
-    #[test]
-    /// Single loop with stop command
+    //#[test]
     fn test_run_stop() {
-        let mut port = Port::open_mock();
-        let backend = port.backend_mut();
-        backend.set_reply_callback(|buffer, msg| {
-            buffer.extend_from_slice(match msg {
-                b"/1 io get ai 1\n" => b"@01 0 OK BUSY -- 5.5\r\n",
-                b"/1 lockstep 1 move abs 5\n" => b"@01 0 OK BUSY -- 0\r\n",
-                b"/get pos\n" => b"@01 0 OK BUSY -- 20\r\n@02 0 OK IDLE -- 10.1\r\n",
-                e => panic!("unexpected message: {:?}", e),
-            })
-        });
+        let mut port = init_zaber_mock().unwrap();
+        // backend.set_reply_callback(|buffer, msg| {
+        //     buffer.extend_from_slice(match msg {
+        //         b"/1 io get ai 1\n" => b"@01 0 OK BUSY -- 5.5\r\n",
+        //         b"/1 lockstep 1 move abs 5\n" => b"@01 0 OK BUSY -- 0\r\n",
+        //         b"/get pos\n" => b"@01 0 OK BUSY -- 20\r\n@02 0 OK IDLE -- 10.1\r\n",
+        //         e => panic!("unexpected message: {:?}", e),
+        //     })
+        // });
 
         //// /io get ai 1
         //backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
@@ -219,141 +241,22 @@ mod tests {
         //backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
 
         let mut state = prepare_state();
-        let _ = state.out_channel.force_push(state.shared.clone());
+        let adc = init_adc().unwrap();
 
+        let config = { state.config.read().unwrap().clone() };
+        let backend = TrackingBackend::new(&mut port, config, adc, read_voltage).unwrap();
         {
-            let (lock, cvar) = &*state.stop_channel;
-            let mut stop = lock.lock().unwrap();
-            *stop = true;
-            cvar.notify_one();
+            let mut out = state.out_channel.write().unwrap();
+            *out = state.shared.clone();
         }
 
-        assert!(run(&mut state, &mut port).is_ok());
-
-        assert_eq!(
-            state.shared,
-            SharedState {
-                voltage_gleeble: 5.5,
-                position_coax: 20.,
-                position_cross: 10.1,
-                busy_coax: true,
-                busy_cross: false,
-                control_state: ControlState::Stopped,
-                error: None,
-            }
-        );
+        run(&mut state, backend).unwrap();
     }
 
     #[test]
-    /// Two loops with timeout (= disconnect)
-    fn test_run_disconnect() {
-        let mut port = Port::open_mock();
-        let backend = port.backend_mut();
-        // /io get ai 1
-        backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
-        // /move abs
-        backend.push(b"@01 0 OK BUSY -- 0\r\n");
-        // /get pos
-        backend.push(b"@01 0 OK BUSY -- 20\r\n");
-        backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
+    fn testing() {
+        let a = 1 + 2;
 
-        // /io get ai 1
-        backend.push(b"@01 0 OK BUSY -- 6.5\r\n");
-        // /move abs
-        backend.push(b"@01 0 OK BUSY -- 0\r\n");
-        // /get pos
-        backend.push(b"@01 0 OK IDLE -- 20.1\r\n");
-        // Last message missing -> timeout
-
-        let mut state = prepare_state();
-        let _ = state.out_channel.force_push(state.shared.clone());
-
-        assert!(run(&mut state, &mut port).is_err());
-
-        assert_eq!(
-            state.shared,
-            SharedState {
-                voltage_gleeble: 6.5,
-                position_coax: 20.1,
-                position_cross: 10.1,
-                busy_coax: false,
-                busy_cross: false,
-                control_state: ControlState::Running,
-                error: None,
-            }
-        );
+        assert_eq!(a, 3);
     }
-
-    #[test]
-    /// Error in reply
-    fn test_run_reply() {
-        let mut port = Port::open_mock();
-        let backend = port.backend_mut();
-        // /io get ai 1
-        backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
-        // /move abs
-        backend.push(b"@01 0 OK BUSY -- 0\r\n");
-        // /get pos
-        backend.push(b"@01 0 OK BUSY -- 20\r\n");
-        backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
-
-        // /io get ai 1
-        backend.push(b"@01 0 OK BUSY -- 6.5\r\n");
-        // /move abs
-        backend.push(b"@01 0 OK BUSY -- 0\r\n");
-        // /get pos
-        backend.push(b"@01 0 OK IDLE -- 20.1\r\n");
-        // Last message missing -> timeout
-
-        let mut state = prepare_state();
-        let _ = state.out_channel.force_push(state.shared.clone());
-
-        assert!(run(&mut state, &mut port).is_err());
-
-        assert_eq!(
-            state.shared,
-            SharedState {
-                voltage_gleeble: 6.5,
-                position_coax: 20.1,
-                position_cross: 10.1,
-                busy_coax: false,
-                busy_cross: false,
-                control_state: ControlState::Running,
-                error: None,
-            }
-        );
-    }
-
-    #[test]
-    /// Error in reply
-    fn test_run_reply_err() {
-        let mut port = Port::open_mock();
-        let backend = port.backend_mut();
-        // /io get ai 1
-        backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
-        // /move abs
-        backend.push(b"@01 0 RJ BUSY WR 0\r\n");
-        // /get pos
-        backend.push(b"@01 0 OK BUSY -- 20\r\n");
-        backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
-
-        let mut state = prepare_state();
-        let _ = state.out_channel.force_push(state.shared.clone());
-
-        assert!(run(&mut state, &mut port).is_err());
-
-        assert_eq!(
-            state.shared,
-            SharedState {
-                voltage_gleeble: 5.5,
-                position_coax: 0.,
-                position_cross: 0.,
-                busy_coax: false,
-                busy_cross: false,
-                control_state: ControlState::Running,
-                error: None,
-            }
-        );
-    }
-    */
 }
