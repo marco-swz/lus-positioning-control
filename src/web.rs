@@ -1,7 +1,9 @@
 use std::{
+    collections::HashMap,
     io::Write,
     path::Path,
     sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use anyhow::{anyhow, Result};
@@ -11,20 +13,20 @@ use axum::{
         ws::{Message, WebSocket},
         State, WebSocketUpgrade,
     },
-    response::{Html, IntoResponse},
+    http::StatusCode,
+    response::{Html, IntoResponse, Response},
     routing::{get, post},
     Form, Json, Router,
 };
 use crossbeam_channel::Sender;
 use futures::{SinkExt, StreamExt};
 use opcua::{
-    core::config::Config,
     server::{config::ServerConfig, state::ServerState},
     sync,
 };
 use serde_json;
 
-use crate::utils::{self, ControlMode, SharedState};
+use crate::utils::{self, Config, ControlMode, SharedState};
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("script.js");
@@ -38,6 +40,31 @@ pub struct WebState {
     pub target_manual: Arc<RwLock<(u32, u32, f64, f64)>>,
     pub config: Arc<RwLock<utils::Config>>,
     pub opcua_state: Arc<sync::RwLock<ServerState>>,
+}
+
+// Make our own error that wraps `anyhow::Error`.
+struct AppError(anyhow::Error);
+
+// Tell axum how to convert `AppError` into a response.
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Something went wrong: {}", self.0),
+        )
+            .into_response()
+    }
+}
+
+// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
+// `Result<_, AppError>`. That way you don't need to do that manually.
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
 }
 
 async fn handle_default(State(state): State<WebState>) -> Html<String> {
@@ -122,8 +149,97 @@ async fn handle_post_mode(
     tracing::debug!("POST mode exit");
 }
 
-async fn handle_post_config(State(state): State<WebState>, Form(config_new): Form<utils::Config>) {
+async fn handle_post_config(
+    State(state): State<WebState>,
+    Form(map_new): Form<HashMap<String, String>>,
+) -> Result<(), AppError> {
     tracing::debug!("POST /config requested");
+
+    let config_new = Config {
+        cycle_time_ns: Duration::from_micros(
+            map_new
+                .get("cycle_time_ns")
+                .unwrap()
+                .parse()
+                .expect("Unable to parse cycle_time_ns"),
+        ),
+        serial_device: map_new.get("serial_device").unwrap().into(),
+        opcua_config_path: map_new.get("opcua_config_path").unwrap().into(),
+        control_mode: match &(map_new
+            .get("control_mode")
+            .ok_or(anyhow!("Missing parameter control_mode"))?[..])
+        {
+            "tracking" => Ok(ControlMode::Tracking),
+            "manual" => Ok(ControlMode::Manual),
+            _ => Err(anyhow!("Invalid control mode")),
+        }?,
+        limit_max_coax: map_new
+            .get("limit_max_coax")
+            .ok_or(anyhow!("Missing parameter limit_max_coax"))?
+            .parse()
+            .or(Err(anyhow!("Unable to parse limit_max_coax")))?,
+        limit_min_coax: map_new
+            .get("limit_min_coax")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse limit_min_coax")))?,
+        maxspeed_coax: map_new
+            .get("maxspeed_coax")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse maxspeed_coax")))?,
+        accel_coax: map_new
+            .get("accel_coax")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse accel_coax")))?,
+        offset_coax: map_new
+            .get("offset_coax")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse offset_coax")))?,
+        limit_max_cross: map_new
+            .get("limit_max_cross")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse limit_max_cross")))?,
+        limit_min_cross: map_new
+            .get("limit_min_cross")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse limit_min_cross")))?,
+        maxspeed_cross: map_new
+            .get("maxspeed_cross")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse maxspeed_cross")))?,
+        accel_cross: map_new
+            .get("accel_cross")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse accel_cross")))?,
+        mock_zaber: map_new
+            .get("mock_zaber")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse mock_zaber")))?,
+        formula_coax: map_new
+            .get("formula_coax")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse formula_coax")))?,
+        formula_cross: map_new
+            .get("formula_cross")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse formula_cross")))?,
+        web_port: map_new
+            .get("web_port")
+            .unwrap()
+            .parse()
+            .or(Err(anyhow!("Unable to parse web_port")))?,
+    };
+
     let _ = state.tx_stop_control.try_send(());
 
     let save_result = save_config(&config_new);
@@ -132,7 +248,8 @@ async fn handle_post_config(State(state): State<WebState>, Form(config_new): For
     *config = config_new;
     drop(config);
 
-    save_result.unwrap();
+    save_result?;
+    Ok(())
 }
 
 async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerConfig> {
@@ -145,14 +262,14 @@ async fn handle_get_opcua(State(state): State<WebState>) -> Json<ServerConfig> {
 
 async fn handle_post_opcua(State(state): State<WebState>, Form(new_config): Form<ServerConfig>) {
     tracing::debug!("POST /opcua requested");
-    if !new_config.is_valid() {
+    if !opcua::core::config::Config::is_valid(&new_config) {
         tracing::error!("new opcua config is invalid");
         Err(anyhow!("new opcua config is invalid")).unwrap()
     }
 
     let config_path = { state.config.read().unwrap().opcua_config_path.clone() };
 
-    match new_config.save(Path::new(&config_path)) {
+    match opcua::core::config::Config::save(&new_config, Path::new(&config_path)) {
         Ok(_) => tracing::debug!("successfully saved new opcua config"),
         Err(_) => {
             tracing::error!("failed to write to opcua config")
