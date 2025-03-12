@@ -124,6 +124,10 @@ form {
     color: red;
 }
 
+.invalid {
+    border-color: red;
+}
+
 #btn-start, #btn-stop {
     margin-top: 20px;
 }

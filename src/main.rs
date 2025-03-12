@@ -20,7 +20,6 @@ use web::{run_web_server, WebState};
 mod simulation;
 
 fn read_config() -> Result<Config> {
-    // TODO(marco): Panic on parse error, default if none found
     match std::fs::read_to_string("config.toml") {
         Ok(config) => {
             tracing::debug!("`config.toml` successfully read");
@@ -76,17 +75,14 @@ fn main() {
     };
 
     let queue_clone = Arc::clone(&state_channel);
-    let opcua_state = {
-        let config_path = state.config.read().unwrap().opcua_config_path.clone();
-        run_opcua(queue_clone, config_path)
-    };
+    let config_path = state.config.read().unwrap().opcua_config_path.clone();
+    run_opcua(queue_clone, config_path);
 
     let web_state = WebState {
         zaber_state: state_channel,
         tx_stop_control: tx_stop.clone(),
         tx_start_control: tx_start.clone(),
         config: state.config.clone(),
-        opcua_state,
         target_manual,
     };
     std::thread::spawn(|| run_web_server(web_state));

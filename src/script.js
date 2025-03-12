@@ -51,13 +51,24 @@ function handleClickSaveConfig() {
         },
     })
         .then(x => {
-            loadConfig();
             if (x.ok) {
                 alert('New config loaded');
-            } else {
-                alert('Error while loading new config');
+                loadConfig();
+                return;
             }
+
+            return x.text();
         })
+        .then(x => {
+            const [name, msg] = x.split(':');
+            let $inp = document.querySelector(`[name=${name}]`);
+            $inp.classList.add('invalid');
+            $inp.onchange = () => {
+                $inp.classList.remove('invalid');
+                $inp.onchange = null;
+            };
+            alert('Error while loading new config:\n' + msg.trim());
+        });
 }
 
 function handleClickStart() {
@@ -134,29 +145,6 @@ function loadConfig() {
             gControlMode = document.querySelector('select[name="control_mode"]').value;
             document.querySelector('#btn-change-mode').style.visibility = 'hidden';
         });
-}
-
-function loadOpcua() {
-    fetch('/opcua')
-        .then(x => x.json())
-        .then(x => Object.entries(x)
-            .forEach(function([key, val]) {
-                if (typeof val === 'object') {
-                    let $fieldset = document.querySelector(`fieldset#${key}`);
-                    if ($fieldset == null) {
-                        return;
-                    }
-                    for (const [k, v] of Object.entries(val)) {
-                        let $inp = document.querySelector(`#${key} [name="${k}"]`);
-                        if ($inp != null) {
-                            $inp.value = v;
-                        }
-                    }
-                } else {
-                    document.querySelector(`[name=${key}]`).value = val;
-                }
-            })
-        );
 }
 
 function handleChangeMode() {
@@ -283,7 +271,6 @@ function accel2steps(accel) {
 }
 
 loadConfig();
-loadOpcua();
 connectWebsocketManual();
 
 document.addEventListener('DOMContentLoaded', () => {
