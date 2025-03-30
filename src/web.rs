@@ -21,7 +21,7 @@ use crossbeam_channel::Sender;
 use futures::{SinkExt, StreamExt};
 use serde_json;
 
-use crate::utils::{self, Config, ControlMode, SharedState};
+use crate::utils::{self, Config, ControlMode, ControlStatus, SharedState};
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("script.js");
@@ -144,6 +144,12 @@ async fn handle_post_config(
     Form(map_new): Form<HashMap<String, String>>,
 ) -> Result<(), AppError> {
     tracing::debug!("POST /config requested");
+
+    if state.zaber_state.read().unwrap().control_state != ControlStatus::Stopped {
+        Err(anyhow!(
+            "The config cannot be changed while running. Stop the control first!"
+        ))?;
+    }
 
     let config_new = Config {
         cycle_time_ns: Duration::from_micros(
