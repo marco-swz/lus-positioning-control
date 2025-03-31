@@ -1,5 +1,5 @@
 [package]
-name = "zaber-opcua-rs"
+name = "lus_positioning_control"
 version = "0.1.0"
 edition = "2021"
 

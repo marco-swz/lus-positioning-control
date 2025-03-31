@@ -1074,6 +1074,34 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 
 [[package]]
+name = "lus_positioning_control"
+version = "0.1.0"
+dependencies = [
+ "ads1x1x",
+ "anyhow",
+ "axum",
+ "axum-extra",
+ "chrono",
+ "criterion",
+ "crossbeam-channel",
+ "crossbeam-queue",
+ "evalexpr",
+ "ftdi-embedded-hal",
+ "futures",
+ "nb 1.1.0",
+ "opcua",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "tokio",
+ "toml",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "zproto",
+]
+
+[[package]]
 name = "mach2"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2402,34 +2430,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36c1fec1a2bb5866f07c25f68c26e565c4c200aebb96d7e55710c19d3e8ac49b"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "zaber-opcua-rs"
-version = "0.1.0"
-dependencies = [
- "ads1x1x",
- "anyhow",
- "axum",
- "axum-extra",
- "chrono",
- "criterion",
- "crossbeam-channel",
- "crossbeam-queue",
- "evalexpr",
- "ftdi-embedded-hal",
- "futures",
- "nb 1.1.0",
- "opcua",
- "serde",
- "serde_json",
- "serde_with",
- "tokio",
- "toml",
- "tower",
- "tracing",
- "tracing-subscriber",
- "zproto",
 ]
 
 [[package]]
