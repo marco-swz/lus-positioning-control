@@ -1,7 +1,10 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::Local;
 use crossbeam_channel::bounded;
-use std::sync::{Arc, RwLock};
+use std::{
+    io::Write,
+    sync::{Arc, RwLock},
+};
 
 mod control;
 use control::init;
@@ -42,6 +45,38 @@ fn read_config() -> Result<Config> {
     }
 }
 
+fn write_config(config_new: &utils::Config) -> Result<()> {
+    return match toml::to_string_pretty(&config_new) {
+        Ok(config) => {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open("config.toml")
+            {
+                Ok(mut file) => match file.write_all(config.as_bytes()) {
+                    Ok(_) => {
+                        tracing::debug!("`config.toml` successfully written");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("error writing to `config.toml: {e}");
+                        Err(anyhow!("error writing to `config.toml: {e}"))
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("error opening `config.toml: {e}");
+                    Err(anyhow!("error opening `config.toml: {e}"))
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("error serializing new config: {e}");
+            Err(anyhow!("error serializing new config: {e}"))
+        }
+    };
+}
+
 fn main() {
     tracing_subscriber::fmt::init();
 
@@ -64,7 +99,11 @@ fn main() {
     };
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
-    let config = read_config().unwrap_or(Config::default());
+    let config = read_config().unwrap_or_else(|_| {
+        let config = Config::default();
+        write_config(&config).unwrap();
+        config
+    });
 
     let mut state = ExecState {
         shared: shared_state.clone(),

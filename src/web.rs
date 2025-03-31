@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    io::Write,
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -21,7 +20,10 @@ use crossbeam_channel::Sender;
 use futures::{SinkExt, StreamExt};
 use serde_json;
 
-use crate::utils::{self, Config, ControlMode, ControlStatus, SharedState};
+use crate::{
+    utils::{self, Config, ControlMode, ControlStatus, SharedState},
+    write_config,
+};
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("script.js");
@@ -90,38 +92,6 @@ async fn handle_refresh(State(state): State<WebState>) -> Json<SharedState> {
     return state;
 }
 
-fn save_config(config_new: &utils::Config) -> Result<()> {
-    return match toml::to_string_pretty(&config_new) {
-        Ok(config) => {
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open("config.toml")
-            {
-                Ok(mut file) => match file.write_all(config.as_bytes()) {
-                    Ok(_) => {
-                        tracing::debug!("`config.toml` successfully written");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!("error writing to `config.toml: {e}");
-                        Err(anyhow!("error writing to `config.toml: {e}"))
-                    }
-                },
-                Err(e) => {
-                    tracing::error!("error opening `config.toml: {e}");
-                    Err(anyhow!("error opening `config.toml: {e}"))
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("error serializing new config: {e}");
-            Err(anyhow!("error serializing new config: {e}"))
-        }
-    };
-}
-
 async fn handle_post_mode(
     extract::Path(new_mode): extract::Path<ControlMode>,
     State(state): State<WebState>,
@@ -130,7 +100,7 @@ async fn handle_post_mode(
     let mut config_new = state.config.read().unwrap().clone();
     config_new.control_mode = new_mode.clone();
 
-    save_config(&config_new).unwrap();
+    write_config(&config_new).unwrap();
     {
         state.config.write().unwrap().control_mode = new_mode;
     }
@@ -248,7 +218,7 @@ async fn handle_post_config(
 
     let _ = state.tx_stop_control.try_send(());
 
-    let save_result = save_config(&config_new);
+    let save_result = write_config(&config_new);
 
     let mut config = state.config.write().unwrap();
     *config = config_new;
