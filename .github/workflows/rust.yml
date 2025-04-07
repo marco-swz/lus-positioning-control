@@ -1,0 +1,27 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests
+      run: cargo test
+    - name: Build docker image
+      run: docker build -t zaber .
+    - name: Build release binary
+      run: sh build.sh
+    - uses: actions/upload-artifact@v4
+      name: Upload release binary
+      with:
+        name: windows_x86_64.exe
+        path: target/x86_64-pc-windows-gnu/release/lus_positioning_control.exe
