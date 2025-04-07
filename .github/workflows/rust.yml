@@ -20,8 +20,7 @@ jobs:
       run: docker build -t zaber .
     - name: Build release binary
       run: sh build.sh
-    - uses: actions/upload-artifact@v4
+    - uses: softprops/action-gh-release@v2
       name: Upload release binary
       with:
-        name: windows_x86_64.exe
-        path: target/x86_64-pc-windows-gnu/release/lus_positioning_control.exe
+        files: target/x86_64-pc-windows-gnu/release/lus_positioning_control.exe
