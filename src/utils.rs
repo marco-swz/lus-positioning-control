@@ -1,5 +1,7 @@
+use anyhow::{anyhow, Result};
 use std::{
     fmt::Display,
+    io::Write,
     path::PathBuf,
     sync::{Arc, RwLock},
     time::Duration,
@@ -192,4 +194,59 @@ pub struct ExecState {
     pub rx_stop: StopChannel,
     pub target_manual: Arc<RwLock<(u32, u32, f64, f64)>>,
     pub config: Arc<RwLock<Config>>,
+}
+
+pub fn read_config() -> Result<Config> {
+    match std::fs::read_to_string("config.toml") {
+        Ok(config) => {
+            tracing::debug!("`config.toml` successfully read");
+
+            match toml::from_str(&config) {
+                Ok(config) => {
+                    tracing::debug!("`config.toml` successfully parsed");
+                    Ok(config)
+                }
+                Err(e) => {
+                    tracing::error!("error parsing `config.toml: {}", e);
+                    Err(e.into())
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("error loading `config.toml: {}", e);
+            Err(e.into())
+        }
+    }
+}
+
+pub fn write_config(config_new: &Config) -> Result<()> {
+    return match toml::to_string_pretty(&config_new) {
+        Ok(config) => {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open("config.toml")
+            {
+                Ok(mut file) => match file.write_all(config.as_bytes()) {
+                    Ok(_) => {
+                        tracing::debug!("`config.toml` successfully written");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        tracing::error!("error writing to `config.toml: {e}");
+                        Err(anyhow!("error writing to `config.toml: {e}"))
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("error opening `config.toml: {e}");
+                    Err(anyhow!("error opening `config.toml: {e}"))
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("error serializing new config: {e}");
+            Err(anyhow!("error serializing new config: {e}"))
+        }
+    };
 }

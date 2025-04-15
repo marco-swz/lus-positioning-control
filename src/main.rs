@@ -1,81 +1,13 @@
-use anyhow::{anyhow, Result};
 use chrono::Local;
 use crossbeam_channel::bounded;
-use std::{
-    io::Write,
-    sync::{Arc, RwLock},
+use std::sync::{Arc, RwLock};
+
+use lus_positioning_control::{
+    control::init,
+    opcua::run_opcua,
+    utils::{read_config, write_config, Config, ControlStatus, ExecState, SharedState},
+    web::{run_web_server, WebState},
 };
-
-mod control;
-use control::init;
-
-mod zaber;
-
-mod opcua;
-use opcua::run_opcua;
-
-mod utils;
-use utils::{Config, ControlStatus, ExecState, SharedState};
-
-mod web;
-use web::{run_web_server, WebState};
-
-mod simulation;
-
-fn read_config() -> Result<Config> {
-    match std::fs::read_to_string("config.toml") {
-        Ok(config) => {
-            tracing::debug!("`config.toml` successfully read");
-
-            match toml::from_str(&config) {
-                Ok(config) => {
-                    tracing::debug!("`config.toml` successfully parsed");
-                    Ok(config)
-                }
-                Err(e) => {
-                    tracing::error!("error parsing `config.toml: {}", e);
-                    Err(e.into())
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("error loading `config.toml: {}", e);
-            Err(e.into())
-        }
-    }
-}
-
-fn write_config(config_new: &utils::Config) -> Result<()> {
-    return match toml::to_string_pretty(&config_new) {
-        Ok(config) => {
-            match std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open("config.toml")
-            {
-                Ok(mut file) => match file.write_all(config.as_bytes()) {
-                    Ok(_) => {
-                        tracing::debug!("`config.toml` successfully written");
-                        Ok(())
-                    }
-                    Err(e) => {
-                        tracing::error!("error writing to `config.toml: {e}");
-                        Err(anyhow!("error writing to `config.toml: {e}"))
-                    }
-                },
-                Err(e) => {
-                    tracing::error!("error opening `config.toml: {e}");
-                    Err(anyhow!("error opening `config.toml: {e}"))
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("error serializing new config: {e}");
-            Err(anyhow!("error serializing new config: {e}"))
-        }
-    };
-}
 
 fn main() {
     tracing_subscriber::fmt::init();

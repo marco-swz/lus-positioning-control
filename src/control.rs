@@ -16,7 +16,7 @@ pub trait Backend {
     fn move_cross(&mut self, target: u32) -> Result<()>;
 }
 
-fn init_adc() -> Result<Adc> {
+pub fn init_adc() -> Result<Adc> {
     let Ok(device) = libftd2xx::Ft232h::with_description("Single RS232-HS") else {
         return Err(anyhow!("Failed to open Ft232h"));
     };
@@ -94,46 +94,16 @@ where
     }
 }
 
-pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
+pub fn run(mut state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
     let config = state.config.read().unwrap();
     let cycle_time = config.cycle_time_ns;
-    let pos_coax_max = config.limit_max_coax;
-    let pos_coax_min = config.limit_min_coax;
-    let pos_cross_max = config.limit_max_cross;
-    let pos_cross_min = config.limit_min_cross;
+    let limits_coax = [config.limit_min_coax, config.limit_max_coax];
+    let limits_cross = [config.limit_min_cross, config.limit_max_cross];
     drop(config);
 
     tracing::info!("Starting control loop");
     loop {
-        let (target_coax, target_cross, voltage1, voltage2) = backend.get_target()?;
-        state.shared.target_coax = target_coax;
-        state.shared.target_cross = target_coax;
-
-        let (pos_coax, pos_cross, busy_coax, busy_cross) = backend.get_pos()?;
-        state.shared.position_coax = pos_coax;
-        state.shared.position_cross = pos_cross;
-        state.shared.busy_coax = busy_coax;
-        state.shared.busy_cross = busy_cross;
-        state.shared.voltage = [voltage1, voltage2];
-        state.shared.timestamp = Local::now();
-
-        tracing::debug!("Position coax: target={target_coax} actual={pos_coax}");
-        if target_coax > pos_coax_min && target_coax < pos_coax_max && target_coax != pos_coax {
-            backend.move_coax(target_coax)?;
-        }
-
-        tracing::debug!("Position cross: target={target_cross} actual={pos_cross}");
-        if target_cross >= pos_cross_min
-            && target_cross <= pos_cross_max
-            && target_cross != pos_cross
-        {
-            backend.move_cross(target_cross)?;
-        }
-
-        if let Ok(mut out) = state.out_channel.try_write() {
-            *out = state.shared.clone();
-            drop(out);
-        }
+        compute_control(&mut state, &mut backend, limits_coax, limits_cross)?;
 
         if let Ok(_) = state.rx_stop.recv_timeout(cycle_time) {
             break;
@@ -149,7 +119,47 @@ pub fn run(state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
     return Ok(());
 }
 
-fn read_voltage(adc: &mut Adc) -> Result<[f64; 2]> {
+#[inline]
+pub fn compute_control(
+    state: &mut ExecState,
+    backend: &mut impl Backend,
+    limits_coax: [u32; 2],
+    limits_cross: [u32; 2],
+) -> Result<()> {
+    let (target_coax, target_cross, voltage1, voltage2) = backend.get_target()?;
+    state.shared.target_coax = target_coax;
+    state.shared.target_cross = target_coax;
+
+    let (pos_coax, pos_cross, busy_coax, busy_cross) = backend.get_pos()?;
+    state.shared.position_coax = pos_coax;
+    state.shared.position_cross = pos_cross;
+    state.shared.busy_coax = busy_coax;
+    state.shared.busy_cross = busy_cross;
+    state.shared.voltage = [voltage1, voltage2];
+    state.shared.timestamp = Local::now();
+
+    tracing::debug!("Position coax: target={target_coax} actual={pos_coax}");
+    if target_coax > limits_coax[0] && target_coax < limits_coax[1] && target_coax != pos_coax {
+        backend.move_coax(target_coax)?;
+    }
+
+    tracing::debug!("Position cross: target={target_cross} actual={pos_cross}");
+    if target_cross >= limits_cross[0]
+        && target_cross <= limits_cross[1]
+        && target_cross != pos_cross
+    {
+        backend.move_cross(target_cross)?;
+    }
+
+    if let Ok(mut out) = state.out_channel.try_write() {
+        *out = state.shared.clone();
+        drop(out);
+    }
+
+    return Ok(());
+}
+
+pub fn read_voltage(adc: &mut Adc) -> Result<[f64; 2]> {
     let Ok(raw1) = block!(adc.read(channel::DifferentialA0A1)) else {
         return Err(anyhow!("Failed to read from ADC A0A1"));
     };

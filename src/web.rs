@@ -20,10 +20,7 @@ use crossbeam_channel::Sender;
 use futures::{SinkExt, StreamExt};
 use serde_json;
 
-use crate::{
-    utils::{self, Config, ControlMode, ControlStatus, SharedState},
-    write_config,
-};
+use crate::utils::{self, write_config, Config, ControlMode, ControlStatus, SharedState};
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("script.js");
