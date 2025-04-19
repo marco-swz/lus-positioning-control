@@ -6,8 +6,9 @@ use crossbeam_channel::bounded;
 use lus_positioning_control::{
     control::{compute_control, init_adc, read_voltage},
     utils::{Config, ControlStatus, ExecState, SharedState},
-    zaber::{init_zaber, ManualBackend},
+    zaber::{init_zaber_mock, ManualBackend},
 };
+use pprof::criterion::{Output, PProfProfiler};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let config = Config::default();
@@ -15,7 +16,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let limits_cross = [config.limit_min_cross, config.limit_max_cross];
     let target_manual = Arc::new(RwLock::new((0, 0, 0., 0.)));
     let target_shared = Arc::clone(&target_manual);
-    let mut port = init_zaber(config.clone()).unwrap();
+    let mut port = init_zaber_mock().unwrap();
     let adc = init_adc().unwrap();
     let mut backend =
         ManualBackend::new(&mut port, adc, config.clone(), read_voltage, target_shared).unwrap();
@@ -43,10 +44,14 @@ pub fn criterion_benchmark(c: &mut Criterion) {
         config: Arc::clone(&config),
     };
 
-    c.bench_function("fib 20", |b| {
+    c.bench_function("compute_control", |b| {
         b.iter(|| compute_control(&mut state, &mut backend, limits_coax, limits_cross))
     });
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group! {
+    name = benches;
+    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    targets = criterion_benchmark
+}
 criterion_main!(benches);
