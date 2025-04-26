@@ -6,7 +6,7 @@ use crossbeam_channel::bounded;
 use lus_positioning_control::{
     control::{compute_control, init_adc, read_voltage},
     utils::{Config, ControlStatus, ExecState, SharedState},
-    zaber::{init_zaber_mock, ManualBackend},
+    zaber::{init_zaber, init_zaber_mock, ManualBackend, TrackingBackend},
 };
 use pprof::criterion::{Output, PProfProfiler};
 
@@ -15,11 +15,11 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let limits_coax = [config.limit_min_coax, config.limit_max_coax];
     let limits_cross = [config.limit_min_cross, config.limit_max_cross];
     let target_manual = Arc::new(RwLock::new((0, 0, 0., 0.)));
-    let target_shared = Arc::clone(&target_manual);
-    let mut port = init_zaber_mock().unwrap();
+    // let target_shared = Arc::clone(&target_manual);
+    // let mut port = init_zaber_mock().unwrap();
+    let mut port = init_zaber(config.clone()).unwrap();
     let adc = init_adc().unwrap();
-    let mut backend =
-        ManualBackend::new(&mut port, adc, config.clone(), read_voltage, target_shared).unwrap();
+    let mut backend = TrackingBackend::new(&mut port, config.clone(), adc, read_voltage).unwrap();
     let config = Arc::new(RwLock::new(config));
     let shared_state = SharedState {
         target_coax: 0,
