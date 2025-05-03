@@ -169,55 +169,74 @@ fn init_axes<T>(zaber_conn: &mut ZaberConn<T>, config: &Config) -> Result<()>
 where
     T: zproto::backend::Backend,
 {
-    zaber_conn.command_reply_n("system restore", 2, check::unchecked())?;
+    zaber_conn
+        .command_reply_n("system restore", 2, check::unchecked())
+        .unwrap_or(Err(anyhow!("Failed restore axes"))?);
 
     let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
 
-    zaber_conn.poll_until_idle(1, check::flag_ok())?;
-    zaber_conn.poll_until_idle(2, check::flag_ok())?;
+    zaber_conn
+        .poll_until_idle(1, check::flag_ok())
+        .unwrap_or(Err(anyhow!("Failed to wait for coaxial axis to be idle"))?);
+    zaber_conn
+        .poll_until_idle(2, check::flag_ok())
+        .unwrap_or(Err(anyhow!("Failed to wait for cross axis to be idle"))?);
 
     zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
 
     if config.offset_coax > 0 {
         zaber_conn
             .command_reply((1, format!("1 move rel {}", config.offset_coax)))?
-            .flag_ok()?;
+            .flag_ok()
+            .unwrap_or(Err(anyhow!("Failed to set up coax offset"))?);
     } else if config.offset_coax < 0 {
         zaber_conn
             .command_reply((1, format!("1 move rel {}", config.offset_coax.abs())))?
-            .flag_ok()?;
+            .flag_ok()
+            .unwrap_or(Err(anyhow!("Failed to set up coax offset"))?);
     }
-    zaber_conn.poll_until_idle(1, check::flag_ok())?;
+    zaber_conn
+        .poll_until_idle(1, check::flag_ok())
+        .unwrap_or(Err(anyhow!("Failed to wait for offset axis to be idle"))?);
 
     zaber_conn
         .command_reply((1, format!("set maxspeed {}", config.maxspeed_coax)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set max speed for coaxial axis"))?);
     zaber_conn
         .command_reply((1, format!("set limit.max {}", config.limit_max_coax)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set max limit for coaxial axis"))?);
     zaber_conn
         .command_reply((1, format!("set limit.min {}", config.limit_min_coax)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set min limit for coaxial axis"))?);
     zaber_conn
         .command_reply((1, format!("set accel {}", config.accel_coax)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set acceleration for coaxial axis"))?);
 
     zaber_conn
         .command_reply((2, format!("set maxspeed {}", config.maxspeed_cross)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set max speed for cross axis"))?);
     zaber_conn
         .command_reply((2, format!("set limit.max {}", config.limit_max_cross)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set max limit for cross axis"))?);
     zaber_conn
         .command_reply((2, format!("set limit.min {}", config.limit_min_cross)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set min limit for cross axis"))?);
     zaber_conn
         .command_reply((2, format!("set accel {}", config.accel_cross)))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to set acceleration for cross axis"))?);
 
     zaber_conn
         .command_reply((1, "lockstep 1 setup enable 1 2"))?
-        .flag_ok()?;
+        .flag_ok()
+        .unwrap_or(Err(anyhow!("Failed to enable lockstep mode"))?);
 
     Ok(())
 }
