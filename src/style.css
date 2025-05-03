@@ -33,6 +33,7 @@ button {
     outline: none;
     width: 75px;
     font-weight: 500;
+    cursor: pointer;
 }
 
 button:hover {
@@ -139,6 +140,10 @@ input[type=range]:disabled {
 input[type=range][orient=vertical] {
     writing-mode: vertical-rl;
     direction: rtl;
+}
+
+#control_state[value=Error] {
+    color: red;
 }
 
 #cont-ctrl-top {

@@ -191,7 +191,7 @@ where
             .unwrap_or(Err(anyhow!("Failed to set up coax offset"))?);
     } else if config.offset_coax < 0 {
         zaber_conn
-            .command_reply((1, format!("1 move rel {}", config.offset_coax.abs())))?
+            .command_reply((1, format!("2 move rel {}", config.offset_coax.abs())))?
             .flag_ok()
             .unwrap_or(Err(anyhow!("Failed to set up coax offset"))?);
     }

@@ -4,8 +4,8 @@ const MAX_POS = 201574; // microsteps
 var gSocket = null;
 /** @type {'Tracking' | 'Manual'} */
 var gControlMode = 'Tracking';
-/** @type {string} */
-var gErrorMessage = '';
+/** @type {?string} */
+var gErrorMessage = null;
 
 
 function handleClickTab(type) {
@@ -187,12 +187,18 @@ function connectWebsocketManual() {
             document.querySelector('#inp-pos-target-cross').value = steps2mm(data['target_cross']);
         }
 
-        gErrorMessage = data['error'];
 
         if (state === 'Error') {
-            document.querySelector('#btn-show-error').style.visibility = 'visible';
+            if(gErrorMessage !== data['error']) {
+                gErrorMessage = data['error'];
+                document.querySelector('#btn-show-error').style.visibility = 'visible';
+                alert(gErrorMessage);
+            }
         } else {
-            document.querySelector('#btn-show-error').style.visibility = 'hidden';
+            if (gErrorMessage != null) {
+                gErrorMessage = null;
+                document.querySelector('#btn-show-error').style.visibility = 'hidden';
+            }
         }
 
         document.querySelector('#control_state').value = state;
@@ -243,6 +249,7 @@ function connectWebsocketManual() {
     gSocket.addEventListener('close', () => {
         document.querySelector('#ui-status').setAttribute('value', 'disconnected');
         document.querySelector('#ui-status').value = 'disconnected';
+        alert('The connection to the control server got lost! Check if the server is running and refresh the page.');
     });
 }
 
@@ -255,19 +262,19 @@ function mm2steps(millis) {
 }
 
 function steps2vel(steps) {
-    return steps * MICROSTEP_SIZE / 1.6384
+    return steps * MICROSTEP_SIZE / 1.6384 / 1000;
 }
 
 function vel2steps(accel) {
-    return Math.round(accel * 1000 * 1.6384 / MICROSTEP_SIZE)
+    return Math.round(accel * 1000 * 1.6384 / MICROSTEP_SIZE);
 }
 
 function steps2accel(steps) {
-    return steps * MICROSTEP_SIZE * 10000 / (1.6384)^2
+    return steps * MICROSTEP_SIZE * 10 / 1.6384;
 }
 
 function accel2steps(accel) {
-    return Math.round(accel * 1000 * 1.6384^2 / MICROSTEP_SIZE / 10000)
+    return Math.round(accel * 1.6384 / MICROSTEP_SIZE / 10);
 }
 
 loadConfig();
