@@ -78,8 +78,8 @@
             <div class="grid">
                 <label>Serial Port</label>
                 <input name="serial_device" value="" required />
-                <label>Refresh Rate [ns]</label>
-                <input name="cycle_time_ns" value="" required />
+                <label>Refresh Rate [ms]</label>
+                <input name="cycle_time_ms" value="" required />
                 <label>OPC-UA Config Path</label>
                 <input name="opcua_config_path" value="" required />
             </div>
@@ -111,7 +111,8 @@
                 <label>Acceleration [mm/s^2]</label>
                 <input name="accel_cross" value="" required />
             </fieldset>
-            <button type="button" onclick="handleClickSaveConfig()">Restart</button>
+            <input name="web_port" value="" type="hidden" required />
+            <button type="button" onclick="handleClickSaveConfig()">Save</button>
         </form>
     </div>
 </div>

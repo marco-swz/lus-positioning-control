@@ -119,12 +119,12 @@ async fn handle_post_config(
     }
 
     let config_new = Config {
-        cycle_time_ns: Duration::from_micros(
+        cycle_time_ms: Duration::from_millis(
             map_new
-                .get("cycle_time_ns")
+                .get("cycle_time_ms")
                 .unwrap()
                 .parse()
-                .expect("cycle_time_ns: Unable to parse cycle_time_ns"),
+                .expect("cycle_time_ms: Unable to parse cycle_time_ms"),
         ),
         serial_device: map_new.get("serial_device").unwrap().into(),
         opcua_config_path: map_new.get("opcua_config_path").unwrap().into(),
@@ -145,74 +145,77 @@ async fn handle_post_config(
             )))?,
         limit_min_coax: map_new
             .get("limit_min_coax")
-            .unwrap()
+            .ok_or(anyhow!("limit_min_coax: Missing parameter limit_min_coax"))?
             .parse()
             .or(Err(anyhow!(
                 "limit_min_coax: Unable to parse limit_min_coax"
             )))?,
         maxspeed_coax: map_new
             .get("maxspeed_coax")
-            .unwrap()
+            .ok_or(anyhow!("maxspeed_coax: Missing parameter maxspeed_coax"))?
             .parse()
             .or(Err(anyhow!("maxspeed_coax: Unable to parse maxspeed_coax")))?,
         accel_coax: map_new
             .get("accel_coax")
-            .unwrap()
+            .ok_or(anyhow!("accel_coax: Missing parameter accel_coax"))?
             .parse()
             .or(Err(anyhow!("accel_coax: Unable to parse accel_coax")))?,
         offset_coax: map_new
             .get("offset_coax")
-            .unwrap()
+            .ok_or(anyhow!("offset_coax: Missing parameter offset_coax"))?
             .parse()
             .or(Err(anyhow!("offset_coax: Unable to parse offset_coax")))?,
         limit_max_cross: map_new
             .get("limit_max_cross")
-            .unwrap()
+            .ok_or(anyhow!("limit_max_cross: Missing parameter limit_max_cross"))?
             .parse()
             .or(Err(anyhow!(
                 "limit_max_cross: Unable to parse limit_max_cross"
             )))?,
         limit_min_cross: map_new
             .get("limit_min_cross")
-            .unwrap()
+            .ok_or(anyhow!("limit_min_cross: Missing parameter limit_min_cross"))?
             .parse()
             .or(Err(anyhow!(
                 "limit_min_cross: Unable to parse limit_min_cross"
             )))?,
         maxspeed_cross: map_new
             .get("maxspeed_cross")
-            .unwrap()
+            .ok_or(anyhow!("maxspeed_cross: Missing parameter maxspeed_cross"))?
             .parse()
             .or(Err(anyhow!(
                 "maxspeed_cross: Unable to parse maxspeed_cross"
             )))?,
         accel_cross: map_new
             .get("accel_cross")
-            .unwrap()
+            .ok_or(anyhow!("accel_cross: Missing parameter accel_cross"))?
             .parse()
             .or(Err(anyhow!("accel_cross: Unable to parse accel_cross")))?,
         mock_zaber: map_new
             .get("mock_zaber")
-            .unwrap()
+            .ok_or(anyhow!("mock_zaber: Missing parameter mock_zaber"))?
             .parse()
             .or(Err(anyhow!("mock_zaber: Unable to parse mock_zaber")))?,
         formula_coax: map_new
             .get("formula_coax")
-            .unwrap()
+            .ok_or(anyhow!("formula_coax: Missing parameter formula_coax"))?
             .parse()
             .or(Err(anyhow!("formula_coax: Unable to parse formula_coax")))?,
         formula_cross: map_new
             .get("formula_cross")
-            .unwrap()
+            .ok_or(anyhow!("formula_cross: Missing parameter formula_cross"))?
             .parse()
             .or(Err(anyhow!("formula_cross: Unable to parse formula_cross")))?,
         web_port: map_new
             .get("web_port")
-            .unwrap()
+            .ok_or(anyhow!("web_port: Missing parameter web_port"))?
             .parse()
             .or(Err(anyhow!("web_port: Unable to parse web_port")))?,
     };
 
+    // If the user changes the config twice without starting
+    // in between, the stop channel would be full and this call
+    // errors, which doesn't matter.
     let _ = state.tx_stop_control.try_send(());
 
     let save_result = write_config(&config_new);

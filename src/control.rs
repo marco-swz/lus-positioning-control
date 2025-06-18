@@ -96,7 +96,7 @@ where
 
 pub fn run(mut state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
     let config = state.config.read().unwrap();
-    let cycle_time = config.cycle_time_ns;
+    let cycle_time = config.cycle_time_ms;
     let limits_coax = [config.limit_min_coax, config.limit_max_coax];
     let limits_cross = [config.limit_min_cross, config.limit_max_cross];
     drop(config);
@@ -205,7 +205,7 @@ mod tests {
             shared: shared_state,
             config: Arc::new(RwLock::new(Config {
                 serial_device: "".to_string(),
-                cycle_time_ns: Duration::from_millis(1),
+                cycle_time_ms: Duration::from_millis(1),
                 opcua_config_path: "".into(),
                 control_mode: utils::ControlMode::Tracking,
                 limit_max_coax: 1000,

@@ -60,6 +60,11 @@ function handleClickSaveConfig() {
             return x.text();
         })
         .then(x => {
+            if (!x.includes(':')) {
+                alert('Error while loading new config:\n' + x);
+                return;
+            }
+
             const [name, msg] = x.split(':');
             let $inp = document.querySelector(`[name=${name}]`);
             $inp.classList.add('invalid');

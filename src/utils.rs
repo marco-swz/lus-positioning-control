@@ -87,16 +87,16 @@ fn default_web_port() -> u32 {
     8085
 }
 
-fn default_cycle_time_ns() -> Duration {
+fn default_cycle_time_ms() -> Duration {
     Duration::from_millis(500)
 }
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    #[serde_as(as = "serde_with::DurationNanoSeconds<u64>")]
-    #[serde(default = "default_cycle_time_ns")]
-    pub cycle_time_ns: Duration,
+    #[serde_as(as = "serde_with::DurationMilliSeconds<u64>")]
+    #[serde(default = "default_cycle_time_ms")]
+    pub cycle_time_ms: Duration,
     #[serde(default = "default_serial_device")]
     pub serial_device: String,
     #[serde(default = "default_opcua_config_path")]
@@ -134,7 +134,7 @@ pub struct Config {
 impl Config {
     pub fn default() -> Self {
         Self {
-            cycle_time_ns: default_cycle_time_ns(),
+            cycle_time_ms: default_cycle_time_ms(),
             serial_device: default_serial_device(),
             opcua_config_path: default_opcua_config_path(),
             control_mode: default_control_mode(),
