@@ -5,6 +5,7 @@ use crate::{
 use ads1x1x::{channel, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
 use chrono::Local;
+use evalexpr::Value;
 use ftdi_embedded_hal::{libftd2xx, FtHal};
 use nb::block;
 use std::sync::Arc;
@@ -16,21 +17,32 @@ pub trait Backend {
     fn move_cross(&mut self, target: u32) -> Result<()>;
 }
 
-pub fn init_adc() -> Result<Adc> {
-    let Ok(device) = libftd2xx::Ft232h::with_description("Single RS232-HS") else {
-        return Err(anyhow!("Failed to open Ft232h"));
-    };
+pub fn init_adc() -> Result<[Adc; 2]> {
+    let adcs: [Result<Adc>; 2] = ["", ""]
+        .map(|serial_number| {
+            let Ok(device) = libftd2xx::Ft232h::with_serial_number(serial_number) else {
+                return Err(anyhow!("Failed to open Ft232h"));
+            };
 
-    let hal = FtHal::init_freq(device, 400_000).unwrap();
-    let Ok(dev) = hal.i2c() else {
-        return Err(anyhow!("Failed to create I2C device"));
-    };
-    let mut adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
-    let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
-        return Err(anyhow!("Failed set ADC range"));
-    };
+            let hal = FtHal::init_freq(device, 400_000).unwrap();
+            let Ok(dev) = hal.i2c() else {
+                return Err(anyhow!("Failed to create I2C device"));
+            };
+            let mut adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
+            let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
+                return Err(anyhow!("Failed set ADC range"));
+            };
 
-    return Ok(adc);
+            return Ok(adc);
+        });
+
+    for adc in &adcs {
+        match adc {
+            Err(e) => return anyhow::bail!(e.to_string()),
+            Ok(_) => (),
+        };
+    }
+    return Ok(adcs.map(|adc| adc.unwrap()));
 }
 
 pub fn init(state: &mut ExecState) -> Result<()> {
@@ -62,10 +74,10 @@ where
 
         let result = match config.control_mode {
             utils::ControlMode::Manual => {
-                let adc = init_adc()?;
+                let adcs = init_adc()?;
                 let backend = ManualBackend::new(
                     &mut port,
-                    adc,
+                    adcs,
                     config.clone(),
                     read_voltage,
                     target_shared,
@@ -75,8 +87,42 @@ where
 
             utils::ControlMode::Tracking => {
                 let adc = init_adc()?;
-                let backend = TrackingBackend::new(&mut port, config.clone(), adc, read_voltage)?;
-                run(state, backend)
+                let funcs_read_voltage = adc.map(|adc| {
+                    || {
+                        let Ok(val) = adc.read() else {
+                            anyhow::bail!("Failed to read from adc");
+                        };
+
+                        Ok(val as f64)
+                    }
+                });
+                let formulas =  [
+                    evalexpr::build_operator_tree(&config.formula_cross)?,
+                    evalexpr::build_operator_tree(&config.formula_coax)?,
+                ];
+                let funcs_voltage_to_target = formulas.map(|f| {
+                    |voltage| {
+                        let context = evalexpr::context_map! {
+                            "v1" => Value::Float(voltage[0]),
+                            "v2" => Value::Float(voltage[1]),
+                        }?;
+
+                        let target_coax_mm = self.formula_coax.eval_number_with_context(&context)?;
+                        let target_coax = mm_to_steps(target_coax_mm);
+                        let target_cross_mm = self.formula_cross.eval_number_with_context(&context)?;
+                        let target_cross = mm_to_steps(target_cross_mm);
+
+                        return Ok((target_coax, target_cross, voltage[0], voltage[1]));
+                    }
+                })
+                run(
+                    state, 
+                    port,
+                    funcs_read_voltage,
+                    funcs_voltage_to_target,
+                    funcs_get_pos,
+                    funcs_move,
+                )
             }
         };
 
@@ -94,16 +140,33 @@ where
     }
 }
 
-pub fn run(mut state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
+pub fn run<T>(
+    mut state: &mut ExecState, 
+    mut backend: T,
+    funcs_read_voltage: [impl Fn() -> Result<f64>; 2],
+    funcs_voltage_to_target: [fn(&Result<f64>) -> Result<u32>; 2],
+    funcs_get_pos: [fn(&mut T) -> Result<(bool, u32)>; 2],
+    funcs_move: [fn(&mut T, u32) -> Result<()>; 2],
+) -> Result<()> {
     let config = state.config.read().unwrap();
     let cycle_time = config.cycle_time_ms;
-    let limits_coax = [config.limit_min_coax, config.limit_max_coax];
-    let limits_cross = [config.limit_min_cross, config.limit_max_cross];
+    let limits = [
+        [config.limit_min_coax, config.limit_max_coax],
+        [config.limit_min_cross, config.limit_max_cross],
+    ];
     drop(config);
 
     tracing::info!("Starting control loop");
     loop {
-        compute_control(&mut state, &mut backend, limits_coax, limits_cross)?;
+        compute_control::<T>(
+            &mut state, 
+            &mut backend, 
+            &funcs_read_voltage,
+            &funcs_voltage_to_target,
+            &funcs_get_pos,
+            &funcs_move,
+            &limits,
+        )?;
 
         if let Ok(_) = state.rx_stop.recv_timeout(cycle_time) {
             break;
@@ -120,35 +183,47 @@ pub fn run(mut state: &mut ExecState, mut backend: impl Backend) -> Result<()> {
 }
 
 #[inline]
-pub fn compute_control(
+pub fn compute_control<T>(
     state: &mut ExecState,
-    backend: &mut impl Backend,
-    limits_coax: [u32; 2],
-    limits_cross: [u32; 2],
+    backend: &mut T,
+    funcs_read_voltage: &[impl Fn() -> Result<f64>; 2],
+    funcs_voltage_to_target: &[fn(&Result<f64>) -> Result<u32>; 2],
+    funcs_get_pos: &[fn(&mut T) -> Result<(bool, u32)>; 2],
+    funcs_move: &[fn(&mut T, u32) -> Result<()>; 2],
+    limits: &[[u32; 2]; 2],
 ) -> Result<()> {
-    let (target_coax, target_cross, voltage1, voltage2) = backend.get_target()?;
-    state.shared.target_coax = target_coax;
-    state.shared.target_cross = target_coax;
+    let vals: Vec<(Result<f64>, Result<u32>)> = funcs_read_voltage.iter()
+        .zip(funcs_voltage_to_target)
+        .map(|(func_read_voltage, func_voltage_to_target)| {
+            let voltage = func_read_voltage();
+            let target = func_voltage_to_target(&voltage);
+            (voltage, target)
+        }).collect();
+    //state.shared.target_coax = target[0];
+    //state.shared.target_cross = target[1];
 
-    let (pos_coax, pos_cross, busy_coax, busy_cross) = backend.get_pos()?;
-    state.shared.position_coax = pos_coax;
-    state.shared.position_cross = pos_cross;
-    state.shared.busy_coax = busy_coax;
-    state.shared.busy_cross = busy_cross;
-    state.shared.voltage = [voltage1, voltage2];
-    state.shared.timestamp = Local::now();
-
-    tracing::debug!("Position coax: target={target_coax} actual={pos_coax}");
-    if target_coax > limits_coax[0] && target_coax < limits_coax[1] && target_coax != pos_coax {
-        backend.move_coax(target_coax)?;
+    let mut targets = [0u32; 2];
+    let mut positions = [0u32; 2];
+    for i in 0..2 {
+        let (is_busy, pos) = (funcs_get_pos[i])(backend)?;
+        let (voltage, target) = vals[i];
+        let target = target?;
+        state.shared.position[i] = pos;
+        state.shared.is_busy[i] = is_busy;
+        state.shared.voltage[i] = voltage?;
+        state.shared.target[i] = target;
+        targets[i] = target;
+        positions[i] = pos;
     }
 
-    tracing::debug!("Position cross: target={target_cross} actual={pos_cross}");
-    if target_cross >= limits_cross[0]
-        && target_cross <= limits_cross[1]
-        && target_cross != pos_cross
-    {
-        backend.move_cross(target_cross)?;
+    for i in 0..2 {
+        tracing::debug!("Position {}: target={} actual={}", i, targets[i], positions[i]);
+        if targets[i] > limits[i][0] 
+            && targets[i] < limits[i][1] 
+            && targets[i] != positions[i] 
+        {
+            (funcs_move[i])(backend, targets[i])?;
+        }
     }
 
     if let Ok(mut out) = state.out_channel.try_write() {

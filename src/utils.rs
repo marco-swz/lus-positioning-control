@@ -175,13 +175,10 @@ impl Display for ControlStatus {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SharedState {
-    pub target_coax: u32,
-    pub target_cross: u32,
-    pub position_cross: u32,
-    pub position_coax: u32,
+    pub target: [u32; 2],
+    pub position: [u32; 2],
     pub voltage: [f64; 2],
-    pub busy_cross: bool,
-    pub busy_coax: bool,
+    pub is_busy: [bool; 2],
     pub control_state: ControlStatus,
     pub error: Option<String>,
     pub timestamp: DateTime<Local>,

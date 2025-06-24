@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::{control::Backend, simulation::Simulator, utils::Config};
 use ads1x1x::ic::{Ads1115, Resolution16Bit};
-use ads1x1x::mode::OneShot;
+use ads1x1x::mode::{Continuous, OneShot};
 use ads1x1x::Ads1x1x;
 use anyhow::{anyhow, Result};
 use evalexpr::Value;
@@ -19,7 +19,7 @@ pub const MAX_POS: u32 = 201574; // microsteps
 pub const MAX_SPEED: u32 = 153600; // microsteps/sec
 
 pub type ZaberConn<T> = Port<'static, T>;
-pub type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, OneShot>;
+pub type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, Continuous>;
 
 pub struct TrackingBackend<'a, T, U> {
     zaber_conn: &'a mut ZaberConn<T>,
@@ -46,8 +46,6 @@ where
             zaber_conn: port,
             adc,
             fn_voltage,
-            formula_cross: evalexpr::build_operator_tree(&formula_cross)?,
-            formula_coax: evalexpr::build_operator_tree(&formula_coax)?,
         })
     }
 }
