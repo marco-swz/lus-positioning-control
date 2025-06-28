@@ -72,30 +72,21 @@ fn add_axis_variables(server: &mut Server, ns: u16, zaber: StateChannel) {
         let now = DateTime::now();
 
         let mut address_space = address_space.write();
-        let _ = address_space.set_variable_value(
-            node_position_coax.clone(),
-            steps_to_mm(zaber_state.position_coax),
-            &now,
-            &now,
-        );
-        let _ = address_space.set_variable_value(
-            node_busy_coax.clone(),
-            zaber_state.busy_coax,
-            &now,
-            &now,
-        );
-        let _ = address_space.set_variable_value(
-            node_position_cross.clone(),
-            steps_to_mm(zaber_state.position_cross),
-            &now,
-            &now,
-        );
-        let _ = address_space.set_variable_value(
-            node_busy_cross.clone(),
-            zaber_state.busy_cross,
-            &now,
-            &now,
-        );
+        for i in 0..2 {
+            let _ = address_space.set_variable_value(
+                node_position_coax.clone(),
+                steps_to_mm(zaber_state.position[i]),
+                &now,
+                &now,
+            );
+            let _ = address_space.set_variable_value(
+                node_busy_coax.clone(),
+                zaber_state.is_busy[i],
+                &now,
+                &now,
+            );
+        }
+
         let _ = address_space.set_variable_value(
             node_status.clone(),
             format!("{:?}", zaber_state.control_state),

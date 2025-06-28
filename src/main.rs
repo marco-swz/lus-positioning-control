@@ -18,12 +18,9 @@ fn main() {
     let target_manual = Arc::new(RwLock::new((0, 0, 0., 0.)));
 
     let shared_state = SharedState {
-        target_coax: 0,
-        target_cross: 0,
-        position_cross: 0,
-        position_coax: 0,
-        busy_cross: false,
-        busy_coax: false,
+        target: [0; 2],
+        position: [0; 2],
+        is_busy: [false; 2],
         control_state: ControlStatus::Stopped,
         error: None,
         timestamp: Local::now(),
