@@ -31,7 +31,7 @@ pub struct WebState {
     pub zaber_state: Arc<RwLock<SharedState>>,
     pub tx_start_control: Sender<()>,
     pub tx_stop_control: Sender<()>,
-    pub target_manual: Arc<RwLock<(u32, u32, f64, f64)>>,
+    pub target_manual: Arc<RwLock<[u32; 2]>>,
     pub config: Arc<RwLock<utils::Config>>,
 }
 
@@ -196,6 +196,11 @@ async fn handle_post_config(
             .ok_or(anyhow!("mock_zaber: Missing parameter mock_zaber"))?
             .parse()
             .or(Err(anyhow!("mock_zaber: Unable to parse mock_zaber")))?,
+        mock_adc: map_new
+            .get("mock_adc")
+            .ok_or(anyhow!("mock_adc: Missing parameter mock_adc"))?
+            .parse()
+            .or(Err(anyhow!("mock_adc: Unable to parse mock_adc")))?,
         formula_coax: map_new
             .get("formula_coax")
             .ok_or(anyhow!("formula_coax: Missing parameter formula_coax"))?
@@ -287,7 +292,7 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
             {
                 match state.target_manual.write() {
                     Err(e) => tracing::error!("Failed to aquire manual voltage lock: {e}"),
-                    Ok(mut v) => *v = (val_coax, val_cross, 0., 0.),
+                    Ok(mut v) => *v = [val_coax, val_cross],
                 };
             }
         }

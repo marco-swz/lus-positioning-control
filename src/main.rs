@@ -15,7 +15,7 @@ fn main() {
     let (tx_stop, rx_stop) = bounded::<()>(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
-    let target_manual = Arc::new(RwLock::new((0, 0, 0., 0.)));
+    let target_manual = Arc::new(RwLock::new([0; 2]));
 
     let shared_state = SharedState {
         target: [0; 2],

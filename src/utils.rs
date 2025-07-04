@@ -75,6 +75,10 @@ fn default_mock_zaber() -> bool {
     false
 }
 
+fn default_mock_adc() -> bool {
+    false
+}
+
 fn default_formula_coax() -> String {
     "64 - (64 - 17) / (2 - 0.12) * (v1 - 0.12)".into()
 }
@@ -123,6 +127,8 @@ pub struct Config {
     pub accel_cross: u32,
     #[serde(default = "default_mock_zaber")]
     pub mock_zaber: bool,
+    #[serde(default = "default_mock_adc")]
+    pub mock_adc: bool,
     #[serde(default = "default_formula_coax")]
     pub formula_coax: String,
     #[serde(default = "default_formula_cross")]
@@ -148,6 +154,7 @@ impl Config {
             maxspeed_coax: default_maxspeed_coax(),
             offset_coax: default_offset_coax(),
             mock_zaber: default_mock_zaber(),
+            mock_adc: default_mock_adc(),
             formula_coax: default_formula_coax(),
             formula_cross: default_formula_cross(),
             web_port: default_web_port(),
@@ -189,7 +196,7 @@ pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
     pub rx_stop: StopChannel,
-    pub target_manual: Arc<RwLock<(u32, u32, f64, f64)>>,
+    pub target_manual: Arc<RwLock<[u32; 2]>>,
     pub config: Arc<RwLock<Config>>,
 }
 

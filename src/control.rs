@@ -1,5 +1,5 @@
 use crate::{
-    utils::{self, ControlStatus, ExecState},
+    utils::{self, Config, ControlStatus, ExecState},
     zaber::{
         get_pos_zaber, init_zaber, init_zaber_mock, mm_to_steps, move_coax_zaber, move_cross_zaber,
         Adc, ZaberConn,
@@ -60,12 +60,32 @@ pub fn init(state: &mut ExecState) -> Result<()> {
 
     tracing::debug!("Init control with backend {:?}", config.control_mode);
     match config.mock_zaber {
-        false => init_backend(init_zaber(config)?, state),
-        true => init_backend(init_zaber_mock()?, state),
+        false => match config.mock_adc {
+            false => init_backend(init_zaber(&config)?, state, read_voltage_adc(&config)?),
+            true => init_backend(init_zaber(&config)?, state, read_voltage_mock()?),
+        },
+        true => match config.mock_adc {
+            false => init_backend(init_zaber_mock()?, state, read_voltage_adc(&config)?),
+            true => init_backend(init_zaber_mock()?, state, read_voltage_mock()?),
+        },
     }
 }
 
-fn init_backend<T>(mut port: ZaberConn<T>, state: &mut ExecState) -> Result<()>
+fn read_voltage_adc(config: &Config) -> Result<[impl FnMut() -> Result<f64>; 2]> {
+    let adcs = init_adc().unwrap();
+    Ok(adcs.map(|mut adc| move || read_voltage(&mut adc)))
+}
+
+fn read_voltage_mock() -> Result<[impl FnMut() -> Result<f64>; 2]> {
+    let a = 0.;
+    Ok([0, 0].map(|_| move || Ok(a)))
+}
+
+fn init_backend<T>(
+    mut port: ZaberConn<T>,
+    state: &mut ExecState,
+    mut funcs_read_voltage: [impl FnMut() -> Result<f64>; 2],
+) -> Result<()>
 where
     T: zproto::backend::Backend,
 {
@@ -75,32 +95,20 @@ where
             s.clone()
         };
 
-        let funcs_voltage_to_target = [
-            evalexpr::build_operator_tree(&config.formula_cross)?,
-            evalexpr::build_operator_tree(&config.formula_coax)?,
-        ].map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
-            move |voltages: &[f64; 2]| {
-                let context = evalexpr::context_map! {
-                    "v1" => Value::Float(voltages[0]),
-                    "v2" => Value::Float(voltages[1]),
-                }?;
-
-                let target = f.eval_number_with_context(&context)?;
-                let target = mm_to_steps(target);
-
-                return Ok(target);
-            }
-        });
-
         let result = match config.control_mode {
             utils::ControlMode::Manual => {
-                let adcs = init_adc()?;
-                let funcs_read_voltage = adcs.map(|mut adc| move || read_voltage(&mut adc));
-                let target_shared = Arc::clone(&state.target_manual);
+                let funcs_voltage_to_target = [0, 1].map(|i| {
+                    let targets_shared = Arc::clone(&state.target_manual);
+                    move |_voltages: &[f64; 2]| {
+                        let targets = targets_shared.read().unwrap();
+
+                        return Ok(targets[i]);
+                    }
+                });
                 run(
                     state,
                     &mut port,
-                    funcs_read_voltage,
+                    &mut funcs_read_voltage,
                     funcs_voltage_to_target,
                     get_pos_zaber,
                     [move_cross_zaber, move_coax_zaber],
@@ -108,12 +116,28 @@ where
             }
 
             utils::ControlMode::Tracking => {
-                let adcs = init_adc()?;
-                let funcs_read_voltage = adcs.map(|mut adc| move || read_voltage(&mut adc));
+                let funcs_voltage_to_target = [
+                    evalexpr::build_operator_tree(&config.formula_cross)?,
+                    evalexpr::build_operator_tree(&config.formula_coax)?,
+                ]
+                .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
+                    move |voltages: &[f64; 2]| {
+                        let context = evalexpr::context_map! {
+                            "v1" => Value::Float(voltages[0]),
+                            "v2" => Value::Float(voltages[1]),
+                        }?;
+
+                        let target = f.eval_number_with_context(&context)?;
+                        let target = mm_to_steps(target);
+
+                        return Ok(target);
+                    }
+                });
+
                 run(
                     state,
                     &mut port,
-                    funcs_read_voltage,
+                    &mut funcs_read_voltage,
                     funcs_voltage_to_target,
                     get_pos_zaber,
                     [move_cross_zaber, move_coax_zaber],
@@ -138,7 +162,7 @@ where
 pub fn run<T>(
     mut state: &mut ExecState,
     mut backend: &mut T,
-    mut funcs_read_voltage: [impl FnMut() -> Result<f64>; 2],
+    mut funcs_read_voltage: &mut [impl FnMut() -> Result<f64>; 2],
     funcs_voltage_to_target: [impl Fn(&[f64; 2]) -> Result<u32>; 2],
     func_get_pos: fn(&mut T) -> Result<([bool; 2], [u32; 2])>,
     funcs_move: [fn(&mut T, u32) -> Result<()>; 2],
@@ -243,9 +267,9 @@ mod tests {
     use super::*;
 
     fn prepare_state() -> ExecState {
-        let (tx_stop, rx_stop) = bounded::<()>(1);
-        let (tx_start, rx_start) = bounded::<()>(1);
-        let target_manual = Arc::new(RwLock::new((0, 0, 0., 0.)));
+        let (_tx_stop, rx_stop) = bounded::<()>(1);
+        let (_tx_start, _rx_start) = bounded::<()>(1);
+        let target_manual = Arc::new(RwLock::new([0; 2]));
         let shared_state = SharedState {
             target: [0; 2],
             position: [0; 2],
@@ -274,6 +298,7 @@ mod tests {
                 maxspeed_cross: 10000,
                 accel_cross: 100000,
                 mock_zaber: true,
+                mock_adc: true,
                 formula_coax: "".into(),
                 formula_cross: "".into(),
                 web_port: 0,
@@ -286,28 +311,11 @@ mod tests {
         return state;
     }
 
-    //#[test]
+    #[test]
     fn test_run_stop() {
         let mut port = init_zaber_mock().unwrap();
-        // backend.set_reply_callback(|buffer, msg| {
-        //     buffer.extend_from_slice(match msg {
-        //         b"/1 io get ai 1\n" => b"@01 0 OK BUSY -- 5.5\r\n",
-        //         b"/1 lockstep 1 move abs 5\n" => b"@01 0 OK BUSY -- 0\r\n",
-        //         b"/get pos\n" => b"@01 0 OK BUSY -- 20\r\n@02 0 OK IDLE -- 10.1\r\n",
-        //         e => panic!("unexpected message: {:?}", e),
-        //     })
-        // });
-
-        //// /io get ai 1
-        //backend.push(b"@01 0 OK BUSY -- 5.5\r\n");
-        //// /move abs
-        //backend.push(b"@01 0 OK BUSY -- 0\r\n");
-        //// /get pos
-        //backend.push(b"@01 0 OK BUSY -- 20\r\n");
-        //backend.push(b"@02 0 OK IDLE -- 10.1\r\n");
 
         let mut state = prepare_state();
-        let adc = init_adc().unwrap();
 
         let config = { state.config.read().unwrap().clone() };
         {
@@ -316,11 +324,12 @@ mod tests {
         }
 
         let adcs = init_adc().unwrap();
-        let funcs_read_voltage = adcs.map(|mut adc| move || read_voltage(&mut adc));
+        let mut funcs_read_voltage = adcs.map(|mut adc| move || read_voltage(&mut adc));
         let funcs_voltage_to_target = [
             evalexpr::build_operator_tree(&config.formula_cross).unwrap(),
             evalexpr::build_operator_tree(&config.formula_coax).unwrap(),
-        ].map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
+        ]
+        .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
             move |voltages: &[f64; 2]| {
                 let context = evalexpr::context_map! {
                     "v1" => Value::Float(voltages[0]),
@@ -336,11 +345,12 @@ mod tests {
         run(
             &mut state,
             &mut port,
-            funcs_read_voltage,
+            &mut funcs_read_voltage,
             funcs_voltage_to_target,
             get_pos_zaber,
             [move_cross_zaber, move_coax_zaber],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]

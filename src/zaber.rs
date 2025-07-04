@@ -27,7 +27,7 @@ pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
 }
 
 pub fn init_zaber(
-    config: Config,
+    config: &Config,
 ) -> Result<zproto::ascii::Port<'static, zproto::backend::Serial>, anyhow::Error> {
     return match Port::open_serial(&config.serial_device) {
         Ok(zaber_conn) => {
