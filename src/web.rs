@@ -17,6 +17,7 @@ use axum::{
     Form, Json, Router,
 };
 use crossbeam_channel::Sender;
+use ftdi_embedded_hal::libftd2xx;
 use futures::{SinkExt, StreamExt};
 use serde_json;
 
@@ -216,6 +217,16 @@ async fn handle_post_config(
             .ok_or(anyhow!("web_port: Missing parameter web_port"))?
             .parse()
             .or(Err(anyhow!("web_port: Unable to parse web_port")))?,
+        adc_serial_number1: map_new
+            .get("adc_serial_number1")
+            .ok_or(anyhow!("adc_serial_number1: Missing parameter adc_serial_number1"))?
+            .parse()
+            .or(Err(anyhow!("adc_serial_number1: Unable to parse adc_serial_number1")))?,
+        adc_serial_number2: map_new
+            .get("adc_serial_number2")
+            .ok_or(anyhow!("adc_serial_number2: Missing parameter adc_serial_number2"))?
+            .parse()
+            .or(Err(anyhow!("adc_serial_number2: Unable to parse adc_serial_number2")))?,
     };
 
     // If the user changes the config twice without starting
@@ -328,6 +339,18 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
     }
 }
 
+async fn handle_get_adc_devices(State(state): State<WebState>) -> Result<Json<Vec<String>>, AppError> {
+    if state.zaber_state.read().unwrap().control_state != ControlStatus::Stopped {
+        Err(anyhow!(
+            "The ADC cannot be discovered while the control is running!"
+        ))?;
+    }
+
+    let devices = libftd2xx::list_devices()?;
+    dbg!(&devices);
+    Ok(Json(devices.into_iter().map(|dev| dev.serial_number).collect()))
+}
+
 pub fn run_web_server(state: WebState) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -348,6 +371,8 @@ pub fn run_web_server(state: WebState) {
         .route("/stop", post(handle_post_stop))
         .with_state(state.clone())
         .route("/config", get(handle_get_config))
+        .with_state(state.clone())
+        .route("/adc-devices", get(handle_get_adc_devices))
         .with_state(state.clone())
         .route("/mode/:m", post(handle_post_mode))
         .with_state(state.clone())

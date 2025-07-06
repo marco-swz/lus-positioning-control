@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 ads1x1x = { git = "https://github.com/eldruin/ads1x1x-rs.git", branch = "master" }
 anyhow = "1.0.90"
-axum = { version="0.7.7", features=["ws"] }
+axum = { version="0.7.7", features=["ws", "macros"] }
 axum-extra = { version="0.9.6", features=["typed-header"] }
 chrono = "0.4.38"
 crossbeam-channel = "0.5.13"

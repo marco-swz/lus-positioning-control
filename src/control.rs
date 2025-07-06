@@ -1,5 +1,5 @@
 use crate::{
-    utils::{self, ControlStatus, ExecState},
+    utils::{self, Config, ControlStatus, ExecState},
     zaber::{
         get_pos_zaber, init_zaber, init_zaber_mock, mm_to_steps, move_coax_zaber, move_cross_zaber,
         Adc, ZaberConn,
@@ -9,7 +9,7 @@ use ads1x1x::{Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use evalexpr::Value;
-use ftdi_embedded_hal::{libftd2xx, FtHal};
+use ftdi_embedded_hal::{libftd2xx::{self}, FtHal};
 use std::sync::Arc;
 use rayon::prelude::*;
 
@@ -20,8 +20,8 @@ pub trait Backend {
     fn move_cross(&mut self, target: u32) -> Result<()>;
 }
 
-pub fn init_adc() -> Result<[Adc; 2]> {
-    let adcs: [Result<Adc>; 2] = ["", ""].map(|serial_number| {
+pub fn init_adc(config: &Config) -> Result<[Adc; 2]> {
+    let adcs: [Result<Adc>; 2] = [&config.adc_serial_number1, &config.adc_serial_number2].map(|serial_number| {
         let Ok(device) = libftd2xx::Ft232h::with_serial_number(serial_number) else {
             return Err(anyhow!("Failed to open Ft232h"));
         };
@@ -63,14 +63,14 @@ pub fn init(state: &mut ExecState) -> Result<()> {
     match config.mock_zaber {
         false => match config.mock_adc {
             false => {
-                let adcs = init_adc().unwrap();
+                let adcs = init_adc(&config).unwrap();
                 init_backend(init_zaber(&config)?, adcs, state, [read_voltage_adc, read_voltage_adc])
             }
             true => init_backend(init_zaber(&config)?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
         },
         true => match config.mock_adc {
             false => {
-                let adcs = init_adc().unwrap();
+                let adcs = init_adc(&config).unwrap();
                 init_backend(init_zaber_mock()?, adcs, state, [read_voltage_adc, read_voltage_adc])
             },
             true => init_backend(init_zaber_mock()?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
@@ -315,6 +315,8 @@ mod tests {
                 formula_coax: "".into(),
                 formula_cross: "".into(),
                 web_port: 0,
+                adc_serial_number1: "".into(),
+                adc_serial_number2: "".into(),
             })),
             rx_stop,
             target_manual,

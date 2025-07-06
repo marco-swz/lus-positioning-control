@@ -111,6 +111,12 @@ function sendTargetPosition() {
     gSocket.send(posCoax + ' ' + posCross);
 }
 
+function handleClickListAdcs() {
+    fetch('/adc-devices')
+        .then(x => x.json()) // TODO(marco): Create error dialog
+        .then(x => console.log(x));
+}
+
 function loadConfig() {
     fetch('/config')
         .then(x => x.json())
