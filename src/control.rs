@@ -1,5 +1,5 @@
 use crate::{
-    utils::{self, Config, ControlStatus, ExecState},
+    utils::{self, ControlStatus, ExecState},
     zaber::{
         get_pos_zaber, init_zaber, init_zaber_mock, mm_to_steps, move_coax_zaber, move_cross_zaber,
         Adc, ZaberConn,
@@ -11,6 +11,7 @@ use chrono::Local;
 use evalexpr::Value;
 use ftdi_embedded_hal::{libftd2xx, FtHal};
 use std::sync::Arc;
+use rayon::prelude::*;
 
 pub trait Backend {
     fn get_target(&mut self) -> Result<(u32, u32, f64, f64)>;
@@ -61,30 +62,35 @@ pub fn init(state: &mut ExecState) -> Result<()> {
     tracing::debug!("Init control with backend {:?}", config.control_mode);
     match config.mock_zaber {
         false => match config.mock_adc {
-            false => init_backend(init_zaber(&config)?, state, read_voltage_adc(&config)?),
-            true => init_backend(init_zaber(&config)?, state, read_voltage_mock()?),
+            false => {
+                let adcs = init_adc().unwrap();
+                init_backend(init_zaber(&config)?, adcs, state, [read_voltage_adc, read_voltage_adc])
+            }
+            true => init_backend(init_zaber(&config)?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
         },
         true => match config.mock_adc {
-            false => init_backend(init_zaber_mock()?, state, read_voltage_adc(&config)?),
-            true => init_backend(init_zaber_mock()?, state, read_voltage_mock()?),
+            false => {
+                let adcs = init_adc().unwrap();
+                init_backend(init_zaber_mock()?, adcs, state, [read_voltage_adc, read_voltage_adc])
+            },
+            true => init_backend(init_zaber_mock()?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
         },
     }
 }
 
-fn read_voltage_adc(config: &Config) -> Result<[impl FnMut() -> Result<f64>; 2]> {
-    let adcs = init_adc().unwrap();
-    Ok(adcs.map(|mut adc| move || read_voltage(&mut adc)))
+fn read_voltage_adc(adc: &mut Adc) -> Result<f64> {
+    read_voltage(adc)
 }
 
-fn read_voltage_mock() -> Result<[impl FnMut() -> Result<f64>; 2]> {
-    let a = 0.;
-    Ok([0, 0].map(|_| move || Ok(a)))
+fn read_voltage_mock(val: &mut f64) -> Result<f64> {
+    Ok(*val)
 }
 
-fn init_backend<T>(
+fn init_backend<T, V: Send + Sync>(
     mut port: ZaberConn<T>,
+    mut adcs: [V; 2],
     state: &mut ExecState,
-    mut funcs_read_voltage: [impl FnMut() -> Result<f64>; 2],
+    mut funcs_read_voltage: [fn(&mut V) -> Result<f64>; 2],
 ) -> Result<()>
 where
     T: zproto::backend::Backend,
@@ -108,6 +114,7 @@ where
                 run(
                     state,
                     &mut port,
+                    &mut adcs,
                     &mut funcs_read_voltage,
                     funcs_voltage_to_target,
                     get_pos_zaber,
@@ -137,6 +144,7 @@ where
                 run(
                     state,
                     &mut port,
+                    &mut adcs,
                     &mut funcs_read_voltage,
                     funcs_voltage_to_target,
                     get_pos_zaber,
@@ -159,10 +167,11 @@ where
     }
 }
 
-pub fn run<T>(
+pub fn run<'a, T, V: Send + Sync>(
     mut state: &mut ExecState,
     mut backend: &mut T,
-    mut funcs_read_voltage: &mut [impl FnMut() -> Result<f64>; 2],
+    adcs: &mut [V; 2],
+    funcs_read_voltage: &mut [fn(&mut V) -> Result<f64>; 2],
     funcs_voltage_to_target: [impl Fn(&[f64; 2]) -> Result<u32>; 2],
     func_get_pos: fn(&mut T) -> Result<([bool; 2], [u32; 2])>,
     funcs_move: [fn(&mut T, u32) -> Result<()>; 2],
@@ -177,10 +186,11 @@ pub fn run<T>(
 
     tracing::info!("Starting control loop");
     loop {
-        compute_control::<T>(
+        compute_control::<T, V>(
             &mut state,
             &mut backend,
-            &mut funcs_read_voltage,
+            adcs,
+            funcs_read_voltage,
             &funcs_voltage_to_target,
             func_get_pos,
             &funcs_move,
@@ -202,18 +212,20 @@ pub fn run<T>(
 }
 
 #[inline]
-pub fn compute_control<T>(
+pub fn compute_control<'a, T, V: Send + Sync>(
     state: &mut ExecState,
     backend: &mut T,
-    funcs_read_voltage: &mut [impl FnMut() -> Result<f64>; 2],
+    adcs: &mut [V; 2],
+    funcs_read_voltage: &mut [fn(&mut V) -> Result<f64>; 2],
     funcs_voltage_to_target: &[impl Fn(&[f64; 2]) -> Result<u32>; 2],
     func_get_pos: fn(&mut T) -> Result<([bool; 2], [u32; 2])>,
     funcs_move: &[fn(&mut T, u32) -> Result<()>; 2],
     limits: &[[u32; 2]; 2],
 ) -> Result<()> {
-    let voltage_readings: Vec<Result<f64>> = funcs_read_voltage
-        .iter_mut()
-        .map(|func_read_voltage| func_read_voltage())
+    let voltage_readings: Vec<Result<f64>> = adcs
+        .par_iter_mut()
+        .enumerate()
+        .map(|(i, adc)| funcs_read_voltage[i](adc))
         .collect();
 
     let (is_busy, positions) = func_get_pos(backend)?; // TODO(marco): Run in parallel
@@ -323,8 +335,6 @@ mod tests {
             *out = state.shared.clone();
         }
 
-        let adcs = init_adc().unwrap();
-        let mut funcs_read_voltage = adcs.map(|mut adc| move || read_voltage(&mut adc));
         let funcs_voltage_to_target = [
             evalexpr::build_operator_tree(&config.formula_cross).unwrap(),
             evalexpr::build_operator_tree(&config.formula_coax).unwrap(),
@@ -345,7 +355,8 @@ mod tests {
         run(
             &mut state,
             &mut port,
-            &mut funcs_read_voltage,
+            &mut [0., 0.],
+            &mut [read_voltage_mock, read_voltage_mock],
             funcs_voltage_to_target,
             get_pos_zaber,
             [move_cross_zaber, move_coax_zaber],
