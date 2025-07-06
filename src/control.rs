@@ -222,13 +222,14 @@ pub fn compute_control<'a, T, V: Send + Sync>(
     funcs_move: &[fn(&mut T, u32) -> Result<()>; 2],
     limits: &[[u32; 2]; 2],
 ) -> Result<()> {
+    // TODO(marco): Try to get [f64; 2] without Vec
     let voltage_readings: Vec<Result<f64>> = adcs
         .par_iter_mut()
         .enumerate()
         .map(|(i, adc)| funcs_read_voltage[i](adc))
         .collect();
 
-    let (is_busy, positions) = func_get_pos(backend)?; // TODO(marco): Run in parallel
+    let (is_busy, positions) = func_get_pos(backend)?;
 
     // Just to convert into [f64; 2]
     let mut voltages = [0.; 2];
