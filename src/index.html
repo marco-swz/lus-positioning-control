@@ -74,7 +74,11 @@
         </div>
     </div>
     <div id="config" class="content">
-        <button onclick="handleClickListAdcs.bind(this)()">List available ADCs</button>
+        <fieldset>
+            <legend>Register ADC</legend>
+            <button onclick="handleClickRegisterAdc.bind(this)(1)">ADC v1</button>
+            <button onclick="handleClickRegisterAdc.bind(this)(2)">ADC v2</button>
+        </fieldset>
         <form id="form-config" action="/config" method="post">
             <div class="grid">
                 <label>Serial Port</label>
@@ -83,10 +87,6 @@
                 <input name="cycle_time_ms" value="" required />
                 <label>OPC-UA Config Path</label>
                 <input name="opcua_config_path" value="" required />
-                <label>ADC Serial Number (v1)</label>
-                <input name="adc_serial_number1" value="" required />
-                <label>ADC Serial Number (v2)</label>
-                <input name="adc_serial_number2" value="" required />
             </div>
             <fieldset class="grid">
                 <legend>Parallel Axis</legend>

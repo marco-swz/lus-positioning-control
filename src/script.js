@@ -111,8 +111,8 @@ function sendTargetPosition() {
     gSocket.send(posCoax + ' ' + posCross);
 }
 
-function handleClickListAdcs() {
-    fetch('/adc-devices')
+function handleClickRegisterAdc(idx) {
+    fetch('/register-adc/' + idx, { method: 'post' })
         .then(x => x.json()) // TODO(marco): Create error dialog
         .then(x => console.log(x));
 }

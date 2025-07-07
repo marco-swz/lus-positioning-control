@@ -7,9 +7,7 @@ use std::{
 use anyhow::{anyhow, Result};
 use axum::{
     extract::{
-        self,
-        ws::{Message, WebSocket},
-        State, WebSocketUpgrade,
+        self, ws::{Message, WebSocket}, Path, State, WebSocketUpgrade
     },
     http::StatusCode,
     response::{Html, IntoResponse, Response},
@@ -17,7 +15,7 @@ use axum::{
     Form, Json, Router,
 };
 use crossbeam_channel::Sender;
-use ftdi_embedded_hal::libftd2xx;
+use ftdi_embedded_hal::libftd2xx::{self, FtdiCommon};
 use futures::{SinkExt, StreamExt};
 use serde_json;
 
@@ -339,16 +337,26 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
     }
 }
 
-async fn handle_get_adc_devices(State(state): State<WebState>) -> Result<Json<Vec<String>>, AppError> {
+async fn handle_post_register_adc(Path(idx): Path<u8>, State(state): State<WebState>) -> Result<(), AppError> {
     if state.zaber_state.read().unwrap().control_state != ControlStatus::Stopped {
         Err(anyhow!(
             "The ADC cannot be discovered while the control is running!"
         ))?;
     }
+    match libftd2xx::num_devices()? {
+        0 => Err(anyhow!(
+            "No adc device found!"
+        ))?,
+        1 => (),
+        _ =>Err(anyhow!(
+            "More than one adc device connected!<br>Make sure only one is plugged in during registration."
+        ))?,
+    };
 
-    let devices = libftd2xx::list_devices()?;
-    dbg!(&devices);
-    Ok(Json(devices.into_iter().map(|dev| dev.serial_number).collect()))
+    let mut device = libftd2xx::Ftdi::new()?;
+    device.eeprom_user_write(&[idx])?;
+
+    Ok(())
 }
 
 pub fn run_web_server(state: WebState) {
@@ -372,7 +380,7 @@ pub fn run_web_server(state: WebState) {
         .with_state(state.clone())
         .route("/config", get(handle_get_config))
         .with_state(state.clone())
-        .route("/adc-devices", get(handle_get_adc_devices))
+        .route("/register-adc/{idx}", post(handle_post_register_adc))
         .with_state(state.clone())
         .route("/mode/:m", post(handle_post_mode))
         .with_state(state.clone())
