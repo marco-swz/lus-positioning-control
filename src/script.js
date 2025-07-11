@@ -112,7 +112,7 @@ function sendTargetPosition() {
 }
 
 function handleClickRegisterAdc(idx) {
-    fetch('/register-adc/' + idx, { method: 'post' })
+    fetch('/adc/' + idx, { method: 'post' })
         .then(x => x.json()) // TODO(marco): Create error dialog
         .then(x => console.log(x));
 }

@@ -1,15 +1,15 @@
 use crate::{
-    utils::{self, Config, ControlStatus, ExecState},
+    utils::{self, ControlStatus, ExecState},
     zaber::{
         get_pos_zaber, init_zaber, init_zaber_mock, mm_to_steps, move_coax_zaber, move_cross_zaber,
         Adc, ZaberConn,
     },
 };
-use ads1x1x::{Ads1x1x, FullScaleRange, TargetAddr};
+use ads1x1x::{channel::{DifferentialA1A3, DifferentialA2A3}, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use evalexpr::Value;
-use ftdi_embedded_hal::{libftd2xx::{self, FtdiCommon}, FtHal};
+use ftdi_embedded_hal::{libftd2xx::{self, FtdiCommon, FtdiMpsse}, FtHal};
 use std::sync::Arc;
 use rayon::prelude::*;
 
@@ -21,30 +21,33 @@ pub trait Backend {
 }
 
 pub fn init_adc() -> Result<[Adc; 2]> {
+    tracing::debug!("initializing adcs");
     match libftd2xx::num_devices()? {
-        0..2 => return Err(anyhow!("Too few adc modules connected!<br>Make sure two are plugged in.")),
+        0..2 => return Err(anyhow!("Too few adc modules connected! Make sure two are plugged in.")),
         2 => (),
-        3.. => return Err(anyhow!("Too many adc modules connected!<br>Make sure two are plugged in.")),
-    };
-    let mut dev1 = libftd2xx::Ftdi::with_index(0)?;
-    let mut buf = [0, 0];
-    dev1.eeprom_user_read(&mut buf[..1])?;
-    let mut dev2 = libftd2xx::Ftdi::with_index(1)?;
-    dev2.eeprom_user_read(&mut buf[1..2])?;
-
-    let devices = match buf {
-        [1, 2] => [dev1, dev2],
-        [2, 1] => [dev2, dev1],
-        _ => return Err(anyhow!("At least one adc device is not registered!")),
+        3.. => return Err(anyhow!("Too many adc modules connected! Make sure two are plugged in.")),
     };
 
-    let adcs: [Result<Adc>; 2] = devices.map(|device| {
+    let adcs: [Result<(Adc, u8)>; 2] = [0, 1].map(|i| {
+        let device = libftd2xx::Ftdi::with_index(i)?;
         let device = libftd2xx::Ft232h::try_from(device)?;
-        let hal = FtHal::init_freq(device, 400_000).unwrap();
-        let Ok(dev) = hal.i2c() else {
+        let hal = FtHal::init_freq(device, 400_000)?;
+        let Ok(i2c) = hal.i2c() else {
             return Err(anyhow!("Failed to create I2C device"));
         };
-        let adc = Ads1x1x::new_ads1115(dev, TargetAddr::default());
+        let mut adc = Ads1x1x::new_ads1115(i2c, TargetAddr::default());
+
+        let Ok(val) = nb::block!(adc.read(DifferentialA2A3)) else {
+            return Err(anyhow!("Failed to read index voltage"));
+        };
+
+        let idx = match val {
+            ..10 => 1,
+            10.. => 2,
+        };
+
+        dbg!(val);
+
         let Ok(mut adc) = adc.into_continuous() else {
             return Err(anyhow!("Failed set ADC continuous mode"));
         };
@@ -52,16 +55,19 @@ pub fn init_adc() -> Result<[Adc; 2]> {
             return Err(anyhow!("Failed set ADC range"));
         };
 
-        return Ok(adc);
+        return Ok((adc, idx));
     });
 
-    for adc in &adcs {
-        match adc {
-            Err(e) => return anyhow::bail!(e.to_string()),
-            Ok(_) => (),
-        };
-    }
-    return Ok(adcs.map(|adc| adc.unwrap()));
+
+    let [adc1, adc2] = adcs;
+    let (adc1, idx1) = adc1?;
+    let (adc2, idx2) = adc2?;
+
+    return Ok(match [idx1, idx2] {
+        [1, 2] => [adc1, adc2],
+        [2, 1] => [adc2, adc1],
+        _ => Err(anyhow!("Invalid adc configuration"))?,
+    });
 }
 
 pub fn init(state: &mut ExecState) -> Result<()> {
@@ -77,14 +83,14 @@ pub fn init(state: &mut ExecState) -> Result<()> {
     match config.mock_zaber {
         false => match config.mock_adc {
             false => {
-                let adcs = init_adc().unwrap();
+                let adcs = init_adc()?;
                 init_backend(init_zaber(&config)?, adcs, state, [read_voltage_adc, read_voltage_adc])
             }
             true => init_backend(init_zaber(&config)?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
         },
         true => match config.mock_adc {
             false => {
-                let adcs = init_adc().unwrap();
+                let adcs = init_adc()?;
                 init_backend(init_zaber_mock()?, adcs, state, [read_voltage_adc, read_voltage_adc])
             },
             true => init_backend(init_zaber_mock()?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),

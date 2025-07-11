@@ -338,6 +338,7 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
 }
 
 async fn handle_post_register_adc(Path(idx): Path<u8>, State(state): State<WebState>) -> Result<(), AppError> {
+    tracing::debug!("POST adc requested with idx {}", idx);
     if state.zaber_state.read().unwrap().control_state != ControlStatus::Stopped {
         Err(anyhow!(
             "The ADC cannot be discovered while the control is running!"
@@ -354,8 +355,12 @@ async fn handle_post_register_adc(Path(idx): Path<u8>, State(state): State<WebSt
     };
 
     let mut device = libftd2xx::Ftdi::new()?;
-    device.eeprom_user_write(&[idx])?;
+    let buf = vec![0u8; device.eeprom_user_size()?];
+    device.eeprom_user_write(&buf)?;
 
+    let mut buf = vec![0u8; device.eeprom_user_size()?];
+    device.eeprom_user_read(&mut buf)?;
+    dbg!(buf);
     Ok(())
 }
 
@@ -380,7 +385,7 @@ pub fn run_web_server(state: WebState) {
         .with_state(state.clone())
         .route("/config", get(handle_get_config))
         .with_state(state.clone())
-        .route("/register-adc/{idx}", post(handle_post_register_adc))
+        .route("/adc/:idx", post(handle_post_register_adc))
         .with_state(state.clone())
         .route("/mode/:m", post(handle_post_mode))
         .with_state(state.clone())
