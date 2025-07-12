@@ -1,0 +1,25 @@
+{
+  "name": "lus-positioning-control",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marco-swz/lus-positioning-control.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/marco-swz/lus-positioning-control/issues"
+  },
+  "homepage": "https://github.com/marco-swz/lus-positioning-control#readme",
+  "description": "",
+  "devDependencies": {
+    "@playwright/test": "1.52.0",
+    "@types/node": "^24.0.13"
+  },
+  "scripts": {
+    "playwright:test": "playwright test",
+    "playwright:test:ui": "playwright test --ui"
+  }
+}
