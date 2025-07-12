@@ -5,11 +5,11 @@ use crate::{
         Adc, ZaberConn,
     },
 };
-use ads1x1x::{channel::{DifferentialA1A3, DifferentialA2A3}, Ads1x1x, FullScaleRange, TargetAddr};
+use ads1x1x::{channel::DifferentialA2A3, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
 use chrono::Local;
 use evalexpr::Value;
-use ftdi_embedded_hal::{libftd2xx::{self, FtdiCommon, FtdiMpsse}, FtHal};
+use ftdi_embedded_hal::{libftd2xx::{self}, FtHal};
 use std::sync::Arc;
 use rayon::prelude::*;
 
