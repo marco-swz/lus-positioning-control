@@ -67,7 +67,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
             &mut [read_voltage, read_voltage],
             &funcs_voltage_to_target,
             get_pos_zaber,
-            &[move_cross_zaber, move_coax_zaber],
+            &[move_coax_zaber, move_cross_zaber],
             &limits
         ))
     });

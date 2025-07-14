@@ -91,9 +91,9 @@ pub fn init(state: &mut ExecState) -> Result<()> {
         true => match config.mock_adc {
             false => {
                 let adcs = init_adc()?;
-                init_backend(init_zaber_mock()?, adcs, state, [read_voltage_adc, read_voltage_adc])
+                init_backend(init_zaber_mock(&config)?, adcs, state, [read_voltage_adc, read_voltage_adc])
             },
-            true => init_backend(init_zaber_mock()?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
+            true => init_backend(init_zaber_mock(&config)?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
         },
     }
 }
@@ -138,7 +138,7 @@ where
                     &mut funcs_read_voltage,
                     funcs_voltage_to_target,
                     get_pos_zaber,
-                    [move_cross_zaber, move_coax_zaber],
+                    [move_coax_zaber, move_cross_zaber],
                 )
             }
 
@@ -168,7 +168,7 @@ where
                     &mut funcs_read_voltage,
                     funcs_voltage_to_target,
                     get_pos_zaber,
-                    [move_cross_zaber, move_coax_zaber],
+                    [move_coax_zaber, move_cross_zaber],
                 )
             }
         };
@@ -348,8 +348,6 @@ mod tests {
 
     #[test]
     fn test_run_stop() {
-        let mut port = init_zaber_mock().unwrap();
-
         let mut state = prepare_state();
 
         let config = { state.config.read().unwrap().clone() };
@@ -357,6 +355,7 @@ mod tests {
             let mut out = state.out_channel.write().unwrap();
             *out = state.shared.clone();
         }
+        let mut port = init_zaber_mock(&config).unwrap();
 
         let funcs_voltage_to_target = [
             evalexpr::build_operator_tree(&config.formula_cross).unwrap(),
@@ -382,7 +381,7 @@ mod tests {
             &mut [read_voltage_mock, read_voltage_mock],
             funcs_voltage_to_target,
             get_pos_zaber,
-            [move_cross_zaber, move_coax_zaber],
+            [move_coax_zaber, move_cross_zaber],
         )
         .unwrap();
     }

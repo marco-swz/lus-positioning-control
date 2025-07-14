@@ -9,8 +9,8 @@
             <div id="cont-config">
                 <div class="grid3">
                     <label>Status</label>
-                    <input id="control_state" disabled />
-                    <button id="btn-show-error" class="slim danger" onclick="alert(gErrorMessage);" style="visibility: hidden">Show</button>
+                    <input id="control_state" value="Stopped" disabled />
+                    <button id="btn-show-error" class="slim danger" onclick="alert(globals.errorMessage);" style="visibility: hidden">Show</button>
                     <label>Mode</label>
                     <select name="control_mode" onchange="handleChangeMode.bind(this)()">
                         <option value="Manual">Manual</option>

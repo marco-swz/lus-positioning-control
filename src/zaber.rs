@@ -18,19 +18,22 @@ pub const MAX_SPEED: u32 = 153600; // microsteps/sec
 pub type ZaberConn<T> = Port<'static, T>;
 pub type Adc = Ads1x1x<I2c<Ft232h>, Ads1115, Resolution16Bit, Continuous>;
 
-pub fn init_zaber_mock() -> Result<ZaberConn<Simulator>> {
+pub fn init_zaber_mock(config: &Config) -> Result<ZaberConn<Simulator>> {
     let sim = Simulator::new();
     let mut opt = OpenGeneralOptions::new();
     opt.checksums(false);
     opt.message_ids(false);
-    return Ok(opt.open(sim));
+    let mut sim = opt.open(sim);
+    init_axes(&mut sim, &config)?;
+    return Ok(sim);
 }
 
 pub fn init_zaber(
     config: &Config,
 ) -> Result<zproto::ascii::Port<'static, zproto::backend::Serial>, anyhow::Error> {
     return match Port::open_serial(&config.serial_device) {
-        Ok(zaber_conn) => {
+        Ok(mut zaber_conn) => {
+            init_axes(&mut zaber_conn, &config)?;
             return Ok(zaber_conn);
         }
         Err(e) => Err(anyhow!(

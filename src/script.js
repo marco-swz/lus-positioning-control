@@ -1,11 +1,14 @@
 const MICROSTEP_SIZE = 0.49609375; //µm
 const MAX_POS = 201574; // microsteps
-/** @type {?WebSocket} */
-var gSocket = null;
-/** @type {'Tracking' | 'Manual'} */
-var gControlMode = 'Tracking';
-/** @type {?string} */
-var gErrorMessage = null;
+var globals = {
+    /** @type {?WebSocket} */
+    socket: null,
+    /** @type {'Tracking' | 'Manual'} */
+    controlMode: 'Tracking',
+    /** @type {?string} */
+    errorMessage: null,
+    stopTriggered: false,
+};
 
 
 function handleClickTab(type) {
@@ -40,7 +43,7 @@ function handleClickSaveConfig() {
 
         data[key] = val;
     }
-    data['control_mode'] = gControlMode;
+    data['control_mode'] = globals.controlMode;
     data['mock_zaber'] = false;
 
     fetch('/config', {
@@ -77,6 +80,7 @@ function handleClickSaveConfig() {
 }
 
 function handleClickStart() {
+    connectWebsocket();
     fetch('/start', {
         method: 'POST',
     });
@@ -85,7 +89,7 @@ function handleClickStart() {
 function handleClickStop() {
     fetch('/stop', {
         method: 'POST',
-    });
+    }).then(() => closeWebsocket());
 }
 
 function handleMousedownSliderPos(slider) {
@@ -105,10 +109,10 @@ function handleChangeTarget(axis) {
 }
 
 function sendTargetPosition() {
-    console.assert(gSocket != null, 'Websocket not initialized');
+    console.assert(globals.socket != null, 'Websocket not initialized');
     const posCoax = document.querySelector('#inp-pos-coax').value
     const posCross = document.querySelector('#inp-pos-cross').value
-    gSocket.send(posCoax + ' ' + posCross);
+    globals.socket.send(posCoax + ' ' + posCross);
 }
 
 function handleClickRegisterAdc(idx) {
@@ -121,9 +125,6 @@ function loadConfig() {
     fetch('/config')
         .then(x => x.json())
         .then(x => {
-            const state = x['control_state'];
-            document.querySelector('#control_state').value = state;
-
             document.querySelector('#inp-pos-min-coax').value = steps2mm(x['limit_min_coax']);
             document.querySelector('#inp-pos-max-coax').value = steps2mm(x['limit_max_coax']);
             document.querySelector('#inp-pos-coax').min = x['limit_min_coax'];
@@ -153,13 +154,13 @@ function loadConfig() {
                 }
             }
 
-            gControlMode = document.querySelector('select[name="control_mode"]').value;
+            globals.controlMode = document.querySelector('select[name="control_mode"]').value;
             document.querySelector('#btn-change-mode').style.visibility = 'hidden';
         });
 }
 
 function handleChangeMode() {
-    if (gControlMode !== this.value) {
+    if (globals.controlMode !== this.value) {
         document.querySelector('#btn-change-mode').style.visibility = null;
     } else {
         document.querySelector('#btn-change-mode').style.visibility = 'hidden';
@@ -175,41 +176,48 @@ function handleClickChangeMode() {
     loadConfig();
 }
 
-function connectWebsocketManual() {
-    gSocket = new WebSocket(`ws://${IP_ADDR}:${PORT}/ws`);
+function closeWebsocket() {
+    globals.stopTriggered = true;
+    globals.socket.close();
+}
+
+function connectWebsocket() {
+    globals.socket = new WebSocket(`ws://${IP_ADDR}:${PORT}/ws`);
     let $btnStart = document.querySelector('#btn-start');
     let $btnStop = document.querySelector('#btn-stop');
 
-    gSocket.addEventListener("message", (event) => {
+    globals.socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data);
         const state = data['control_state'];
 
         document.querySelector('#inp-voltage1').value = data['voltage'][0];
         document.querySelector('#inp-voltage2').value = data['voltage'][1];
-        document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position_coax']);
-        document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position_cross']);
-        if (state !== "Running" || gControlMode === 'Tracking') {
-            document.querySelector('#inp-pos-coax').value = data['position_coax'];
-            document.querySelector('#inp-pos-cross').value = data['position_cross'];
+        document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position'][0]);
+        document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position'][0]);
+        if (state !== "Running" || globals.controlMode === 'Tracking') {
+            document.querySelector('#inp-pos-coax').value = data['position'][0];
+            document.querySelector('#inp-pos-cross').value = data['position'][1];
         }
         
-        if (gControlMode === 'Tracking') {
-            document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target_coax']);
-            document.querySelector('#inp-pos-target-cross').value = steps2mm(data['target_cross']);
+        if (globals.controlMode === 'Tracking') {
+            document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target'][0]);
+            document.querySelector('#inp-pos-target-cross').value = steps2mm(data['target'][1]);
         }
 
-
         if (state === 'Error') {
-            if(gErrorMessage !== data['error']) {
-                gErrorMessage = data['error'];
+            if(globals.errorMessage !== data['error']) {
+                globals.errorMessage = data['error'];
                 document.querySelector('#btn-show-error').style.visibility = 'visible';
-                alert(gErrorMessage);
+                alert(globals.errorMessage);
             }
-        } else {
-            if (gErrorMessage != null) {
-                gErrorMessage = null;
-                document.querySelector('#btn-show-error').style.visibility = 'hidden';
-            }
+            closeWebsocket();
+            initInputs('Error');
+            return;
+        } 
+
+        if (globals.errorMessage != null) {
+            globals.errorMessage = null;
+            document.querySelector('#btn-show-error').style.visibility = 'hidden';
         }
 
         document.querySelector('#control_state').value = state;
@@ -233,7 +241,7 @@ function connectWebsocketManual() {
         }
 
         if (state === 'Running') {
-            if (gControlMode === 'Tracking') {
+            if (globals.controlMode === 'Tracking') {
                 document.querySelector('#inp-pos-coax').disabled = true;
                 document.querySelector('#inp-pos-cross').disabled = true;
                 document.querySelector('#inp-pos-target-coax').disabled = true;
@@ -244,24 +252,45 @@ function connectWebsocketManual() {
                 document.querySelector('#inp-pos-target-coax').disabled = false;
                 document.querySelector('#inp-pos-target-cross').disabled = false;
             }
-        } else {
-            document.querySelector('#inp-pos-coax').disabled = true;
-            document.querySelector('#inp-pos-cross').disabled = true;
-            document.querySelector('#inp-pos-target-coax').disabled = true;
-            document.querySelector('#inp-pos-target-cross').disabled = true;
-        }
+        } 
     });
 
-    gSocket.addEventListener('open', () => {
+    globals.socket.addEventListener('open', () => {
         document.querySelector('#ui-status').setAttribute('value', 'connected');
         document.querySelector('#ui-status').value = 'connected';
     });
 
-    gSocket.addEventListener('close', () => {
-        document.querySelector('#ui-status').setAttribute('value', 'disconnected');
-        document.querySelector('#ui-status').value = 'disconnected';
-        alert('The connection to the control server got lost! Check if the server is running and refresh the page.');
+    globals.socket.addEventListener('close', () => {
+        document.querySelector('#btn-stop').hidden = true;
+        document.querySelector('#btn-start').hidden = false;
+
+        if (!globals.stopTriggered) {
+            document.querySelector('#ui-status').setAttribute('value', 'disconnected');
+            document.querySelector('#ui-status').value = 'disconnected';
+            alert('The connection to the control server got lost! Check if the server is running and refresh the page.');
+        }
+        globals.socket = null;
+        globals.stopTriggered = false;
+        initInputs('Stopped');
     });
+}
+
+/**
+ * @param {'Stopped'|'Error'} 
+ * @returns {void}
+ */
+function initInputs(state) {
+    document.querySelector('#control_state').value = state;
+    document.querySelector('#inp-pos-target-coax').value = '-';
+    document.querySelector('#inp-pos-target-cross').value = '-';
+    document.querySelector('#inp-pos-actual-coax').value = '-';
+    document.querySelector('#inp-pos-actual-cross').value = '-';
+    document.querySelector('#inp-voltage1').value = '-';
+    document.querySelector('#inp-voltage2').value = '-';
+    document.querySelector('#inp-pos-coax').disabled = true;
+    document.querySelector('#inp-pos-cross').disabled = true;
+    document.querySelector('#inp-pos-target-coax').disabled = true;
+    document.querySelector('#inp-pos-target-cross').disabled = true;
 }
 
 function steps2mm(steps) {
@@ -288,8 +317,6 @@ function accel2steps(accel) {
     return Math.round(accel * 1.6384 / MICROSTEP_SIZE / 10);
 }
 
-loadConfig();
-connectWebsocketManual();
 
 document.addEventListener('DOMContentLoaded', () => {
     const $inpTargetCoax = document.querySelector('#inp-pos-target-coax');
@@ -303,4 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $sliderTargetCross.addEventListener('input', (e) => {
         $inpTargetCross.value = steps2mm(e.currentTarget.value);
     })
+
+    initInputs('Stopped');
+    loadConfig();
 });
