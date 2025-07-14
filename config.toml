@@ -16,3 +16,5 @@ mock_adc = true
 formula_coax = "47.11 - (47.11 - 33.30) / (1.282 - 0.403) * (v1 - 0.403)"
 formula_cross = "10"
 web_port = 8085
+adc_serial_number1 = ""
+adc_serial_number2 = ""

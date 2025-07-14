@@ -80,7 +80,8 @@ function handleClickSaveConfig() {
 }
 
 function handleClickStart() {
-    connectWebsocket();
+    document.querySelector('#inp-pos-target-coax').value = steps2mm(document.querySelector('#inp-pos-coax').value);
+    document.querySelector('#inp-pos-target-cross').value = steps2mm(document.querySelector('#inp-pos-cross').value);
     fetch('/start', {
         method: 'POST',
     });
@@ -89,7 +90,7 @@ function handleClickStart() {
 function handleClickStop() {
     fetch('/stop', {
         method: 'POST',
-    }).then(() => closeWebsocket());
+    });
 }
 
 function handleMousedownSliderPos(slider) {
@@ -156,6 +157,7 @@ function loadConfig() {
 
             globals.controlMode = document.querySelector('select[name="control_mode"]').value;
             document.querySelector('#btn-change-mode').style.visibility = 'hidden';
+            connectWebsocket();
         });
 }
 
@@ -176,11 +178,6 @@ function handleClickChangeMode() {
     loadConfig();
 }
 
-function closeWebsocket() {
-    globals.stopTriggered = true;
-    globals.socket.close();
-}
-
 function connectWebsocket() {
     globals.socket = new WebSocket(`ws://${IP_ADDR}:${PORT}/ws`);
     let $btnStart = document.querySelector('#btn-start');
@@ -189,44 +186,11 @@ function connectWebsocket() {
     globals.socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data);
         const state = data['control_state'];
-
-        document.querySelector('#inp-voltage1').value = data['voltage'][0];
-        document.querySelector('#inp-voltage2').value = data['voltage'][1];
-        document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position'][0]);
-        document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position'][0]);
-        if (state !== "Running" || globals.controlMode === 'Tracking') {
-            document.querySelector('#inp-pos-coax').value = data['position'][0];
-            document.querySelector('#inp-pos-cross').value = data['position'][1];
-        }
-        
-        if (globals.controlMode === 'Tracking') {
-            document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target'][0]);
-            document.querySelector('#inp-pos-target-cross').value = steps2mm(data['target'][1]);
-        }
-
-        if (state === 'Error') {
-            if(globals.errorMessage !== data['error']) {
-                globals.errorMessage = data['error'];
-                document.querySelector('#btn-show-error').style.visibility = 'visible';
-                alert(globals.errorMessage);
-            }
-            closeWebsocket();
-            initInputs('Error');
-            return;
-        } 
+        document.querySelector('#control_state').value = state;
 
         if (globals.errorMessage != null) {
             globals.errorMessage = null;
             document.querySelector('#btn-show-error').style.visibility = 'hidden';
-        }
-
-        document.querySelector('#control_state').value = state;
-        if (state !== 'Running') {
-            $btnStart.hidden = false;
-            $btnStop.hidden = true;
-        } else {
-            $btnStart.hidden = true;
-            $btnStop.hidden = false;
         }
 
         if (data['busy_coax']) {
@@ -239,20 +203,40 @@ function connectWebsocket() {
         } else {
             document.querySelector('#inp-pos-actual-cross').classList.remove('working');
         }
-
-        if (state === 'Running') {
-            if (globals.controlMode === 'Tracking') {
-                document.querySelector('#inp-pos-coax').disabled = true;
-                document.querySelector('#inp-pos-cross').disabled = true;
-                document.querySelector('#inp-pos-target-coax').disabled = true;
-                document.querySelector('#inp-pos-target-cross').disabled = true;
-            } else {
-                document.querySelector('#inp-pos-coax').disabled = false;
-                document.querySelector('#inp-pos-cross').disabled = false;
-                document.querySelector('#inp-pos-target-coax').disabled = false;
-                document.querySelector('#inp-pos-target-cross').disabled = false;
-            }
-        } 
+        switch (state) {
+            case 'Running':
+                $btnStart.hidden = true;
+                $btnStop.hidden = false;
+                document.querySelector('#inp-voltage1').value = data['voltage'][0];
+                document.querySelector('#inp-voltage2').value = data['voltage'][1];
+                document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position'][0]);
+                document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position'][1]);
+        
+                if (globals.controlMode === 'Tracking') {
+                    document.querySelector('#inp-pos-coax').disabled = true;
+                    document.querySelector('#inp-pos-cross').disabled = true;
+                    document.querySelector('#inp-pos-target-coax').disabled = true;
+                    document.querySelector('#inp-pos-target-cross').disabled = true;
+                    document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target'][0]);
+                    document.querySelector('#inp-pos-target-cross').value = steps2mm(data['target'][1]);
+                } else {
+                    document.querySelector('#inp-pos-coax').disabled = false;
+                    document.querySelector('#inp-pos-cross').disabled = false;
+                    document.querySelector('#inp-pos-target-coax').disabled = false;
+                    document.querySelector('#inp-pos-target-cross').disabled = false;
+                }
+                break;
+            case 'Error':
+                if(globals.errorMessage !== data['error']) {
+                    globals.errorMessage = data['error'];
+                    document.querySelector('#btn-show-error').style.visibility = 'visible';
+                    alert(globals.errorMessage);
+                }
+            default:
+                $btnStart.hidden = false;
+                $btnStop.hidden = true;
+                initInputs('Stopped');
+        }
     });
 
     globals.socket.addEventListener('open', () => {
@@ -264,13 +248,11 @@ function connectWebsocket() {
         document.querySelector('#btn-stop').hidden = true;
         document.querySelector('#btn-start').hidden = false;
 
-        if (!globals.stopTriggered) {
-            document.querySelector('#ui-status').setAttribute('value', 'disconnected');
-            document.querySelector('#ui-status').value = 'disconnected';
-            alert('The connection to the control server got lost! Check if the server is running and refresh the page.');
-        }
+        document.querySelector('#ui-status').setAttribute('value', 'disconnected');
+        document.querySelector('#ui-status').value = 'disconnected';
+        alert('The connection to the control server got lost! Check if the server is running and refresh the page.');
+
         globals.socket = null;
-        globals.stopTriggered = false;
         initInputs('Stopped');
     });
 }
