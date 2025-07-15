@@ -7,12 +7,12 @@ use evalexpr::Value;
 use lus_positioning_control::{
     control::{compute_control, init_adc, read_voltage},
     utils::{Config, ControlStatus, ExecState, SharedState},
-    zaber::{get_pos_zaber, init_zaber, mm_to_steps, move_coax_zaber, move_cross_zaber},
+    zaber::{get_pos_zaber, mm_to_steps, move_coax_zaber, move_cross_zaber},
 };
 use pprof::criterion::{Output, PProfProfiler};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let config = Config::default();
+    let mut config = Config::default();
     let limits = [
         [config.limit_min_coax, config.limit_max_coax],
         [config.limit_min_cross, config.limit_max_cross]
@@ -36,7 +36,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     });
 
     let target_manual = Arc::new(RwLock::new([0, 0]));
-    let mut port = init_zaber(&config).unwrap();
+    // let mut port = lus_positioning_control::zaber::init_zaber_mock(&config).unwrap();
+    let mut port = lus_positioning_control::zaber::init_zaber(&config).unwrap();
     let mut adcs = init_adc().unwrap();
     let config = Arc::new(RwLock::new(config));
     let shared_state = SharedState {
