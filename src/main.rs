@@ -87,7 +87,13 @@ fn main() {
 
         tracing::debug!("trying to init control");
         match init(&mut state) {
-            Ok(_) => (),
+            Ok(_) => {
+                state.shared.control_state = ControlStatus::Stopped;
+                state.shared.timestamp = Local::now();
+                let mut out = state.out_channel.write().unwrap();
+                *out = state.shared.clone();
+                drop(out);
+            }
             Err(e) => {
                 tracing::error!("control error: {}", &e);
                 state.shared.control_state = ControlStatus::Error;

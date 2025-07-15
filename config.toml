@@ -1,7 +1,7 @@
 cycle_time_ms = 5
 serial_device = "/dev/ttyACM0"
 opcua_config_path = "opcua_config.conf"
-control_mode = "Manual"
+control_mode = "Tracking"
 limit_max_coax = 201574
 limit_min_coax = 0
 maxspeed_coax = 153600

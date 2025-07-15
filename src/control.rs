@@ -1,5 +1,5 @@
 use crate::{
-    utils::{self, ControlStatus, ExecState},
+    utils::{self, ExecState},
     zaber::{
         get_pos_zaber, init_zaber, init_zaber_mock, mm_to_steps, move_coax_zaber, move_cross_zaber,
         Adc, ZaberConn,
@@ -7,7 +7,6 @@ use crate::{
 };
 use ads1x1x::{channel::DifferentialA2A3, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
-use chrono::Local;
 use evalexpr::Value;
 use ftdi_embedded_hal::{libftd2xx::{self}, FtHal};
 use std::sync::Arc;
@@ -123,6 +122,7 @@ where
 
         let result = match config.control_mode {
             utils::ControlMode::Manual => {
+                tracing::debug!("starting in control mode Manual");
                 let funcs_voltage_to_target = [0, 1].map(|i| {
                     let targets_shared = Arc::clone(&state.target_manual);
                     move |_voltages: &[f64; 2]| {
@@ -143,6 +143,7 @@ where
             }
 
             utils::ControlMode::Tracking => {
+                tracing::debug!("starting in control mode Tracking");
                 let funcs_voltage_to_target = [
                     evalexpr::build_operator_tree(&config.formula_cross)?,
                     evalexpr::build_operator_tree(&config.formula_coax)?,
@@ -223,11 +224,6 @@ pub fn run<'a, T, V: Send + Sync>(
     }
 
     tracing::info!("Control loop stopped");
-    state.shared.control_state = ControlStatus::Stopped;
-    state.shared.timestamp = Local::now();
-    let mut out = state.out_channel.write().unwrap();
-    *out = state.shared.clone();
-    drop(out);
     return Ok(());
 }
 
@@ -294,8 +290,11 @@ pub fn read_voltage(adc: &mut Adc) -> Result<f64> {
 mod tests {
     use std::{sync::RwLock, time::Duration};
 
+    use chrono::Local;
     use crossbeam_channel::bounded;
     use utils::{Config, SharedState};
+
+    use crate::utils::ControlStatus;
 
     use super::*;
 
@@ -332,8 +331,8 @@ mod tests {
                 accel_cross: 100000,
                 mock_zaber: true,
                 mock_adc: true,
-                formula_coax: "".into(),
-                formula_cross: "".into(),
+                formula_coax: "v1 + v2".into(),
+                formula_cross: "v1 + v2".into(),
                 web_port: 0,
                 adc_serial_number1: "".into(),
                 adc_serial_number2: "".into(),

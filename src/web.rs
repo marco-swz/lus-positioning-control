@@ -91,18 +91,19 @@ async fn handle_refresh(State(state): State<WebState>) -> Json<SharedState> {
 async fn handle_post_mode(
     extract::Path(new_mode): extract::Path<ControlMode>,
     State(state): State<WebState>,
-) {
+) -> Result<(), AppError> {
     tracing::debug!("POST mode requested - new mode: {:?}", new_mode);
     let mut config_new = state.config.read().unwrap().clone();
     config_new.control_mode = new_mode.clone();
 
-    write_config(&config_new).unwrap();
+    write_config(&config_new)?;
     {
         state.config.write().unwrap().control_mode = new_mode;
     }
 
-    let _ = state.tx_stop_control.try_send(());
+    state.tx_stop_control.try_send(())?;
     tracing::debug!("POST mode exit");
+    Ok(())
 }
 
 async fn handle_post_config(
@@ -242,16 +243,18 @@ async fn handle_post_config(
     Ok(())
 }
 
-async fn handle_post_start(State(state): State<WebState>) {
+async fn handle_post_start(State(state): State<WebState>) -> Result<(), AppError> {
     tracing::debug!("POST start requested");
-    let _ = state.tx_start_control.try_send(());
+    state.tx_start_control.try_send(())?;
     tracing::debug!("POST start exit");
+    Ok(())
 }
 
-async fn handle_post_stop(State(state): State<WebState>) {
+async fn handle_post_stop(State(state): State<WebState>) -> Result<(), AppError> {
     tracing::debug!("POST stop requested");
-    let _ = state.tx_stop_control.try_send(());
+    state.tx_stop_control.try_send(())?;
     tracing::debug!("POST stop exit");
+    Ok(())
 }
 
 async fn handle_get_config(State(state): State<WebState>) -> Json<utils::Config> {
