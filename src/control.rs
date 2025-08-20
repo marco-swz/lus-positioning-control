@@ -45,7 +45,7 @@ pub fn init_adc() -> Result<[Adc; 2]> {
             10.. => 2,
         };
 
-        dbg!(val);
+        tracing::debug!("adc index value: {}", val);
 
         let Ok(mut adc) = adc.into_continuous() else {
             return Err(anyhow!("Failed set ADC continuous mode"));

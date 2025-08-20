@@ -216,16 +216,6 @@ async fn handle_post_config(
             .ok_or(anyhow!("web_port: Missing parameter web_port"))?
             .parse()
             .or(Err(anyhow!("web_port: Unable to parse web_port")))?,
-        adc_serial_number1: map_new
-            .get("adc_serial_number1")
-            .ok_or(anyhow!("adc_serial_number1: Missing parameter adc_serial_number1"))?
-            .parse()
-            .or(Err(anyhow!("adc_serial_number1: Unable to parse adc_serial_number1")))?,
-        adc_serial_number2: map_new
-            .get("adc_serial_number2")
-            .ok_or(anyhow!("adc_serial_number2: Missing parameter adc_serial_number2"))?
-            .parse()
-            .or(Err(anyhow!("adc_serial_number2: Unable to parse adc_serial_number2")))?,
     };
 
     // If the user changes the config twice without starting
@@ -340,33 +330,6 @@ async fn handle_manual(socket: WebSocket, state: WebState) {
     }
 }
 
-async fn handle_post_register_adc(Path(idx): Path<u8>, State(state): State<WebState>) -> Result<(), AppError> {
-    tracing::debug!("POST adc requested with idx {}", idx);
-    if state.zaber_state.read().unwrap().control_state != ControlStatus::Stopped {
-        Err(anyhow!(
-            "The ADC cannot be discovered while the control is running!"
-        ))?;
-    }
-    match libftd2xx::num_devices()? {
-        0 => Err(anyhow!(
-            "No adc device found!"
-        ))?,
-        1 => (),
-        _ =>Err(anyhow!(
-            "More than one adc device connected!<br>Make sure only one is plugged in during registration."
-        ))?,
-    };
-
-    let mut device = libftd2xx::Ftdi::new()?;
-    let buf = vec![0u8; device.eeprom_user_size()?];
-    device.eeprom_user_write(&buf)?;
-
-    let mut buf = vec![0u8; device.eeprom_user_size()?];
-    device.eeprom_user_read(&mut buf)?;
-    dbg!(buf);
-    Ok(())
-}
-
 pub fn run_web_server(state: WebState) {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -387,8 +350,6 @@ pub fn run_web_server(state: WebState) {
         .route("/stop", post(handle_post_stop))
         .with_state(state.clone())
         .route("/config", get(handle_get_config))
-        .with_state(state.clone())
-        .route("/adc/:idx", post(handle_post_register_adc))
         .with_state(state.clone())
         .route("/mode/:m", post(handle_post_mode))
         .with_state(state.clone())

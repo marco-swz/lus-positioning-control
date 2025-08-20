@@ -84,7 +84,14 @@ function handleClickStart() {
     document.querySelector('#inp-pos-target-cross').value = steps2mm(document.querySelector('#inp-pos-cross').value);
     fetch('/start', {
         method: 'POST',
+    }).then(() => {
+        resetError();
     });
+}
+
+function resetError() {
+    globals.errorMessage = null;
+    document.querySelector('#btn-show-error').style.visibility = 'hidden';
 }
 
 function handleClickStop() {
@@ -114,12 +121,6 @@ function sendTargetPosition() {
     const posCoax = document.querySelector('#inp-pos-coax').value
     const posCross = document.querySelector('#inp-pos-cross').value
     globals.socket.send(posCoax + ' ' + posCross);
-}
-
-function handleClickRegisterAdc(idx) {
-    fetch('/adc/' + idx, { method: 'post' })
-        .then(x => x.json()) // TODO(marco): Create error dialog
-        .then(x => console.log(x));
 }
 
 function loadConfig() {
@@ -183,15 +184,14 @@ function connectWebsocket() {
     let $btnStart = document.querySelector('#btn-start');
     let $btnStop = document.querySelector('#btn-stop');
 
+    if (globals.errorMessage != null) {
+        resetError();
+    }
+
     globals.socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data);
         const state = data['control_state'];
         document.querySelector('#control_state').value = state;
-
-        if (globals.errorMessage != null) {
-            globals.errorMessage = null;
-            document.querySelector('#btn-show-error').style.visibility = 'hidden';
-        }
 
         if (data['busy_coax']) {
             document.querySelector('#inp-pos-actual-coax').classList.add('working');

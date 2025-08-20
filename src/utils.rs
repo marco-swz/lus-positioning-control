@@ -95,14 +95,6 @@ fn default_cycle_time_ms() -> Duration {
     Duration::from_millis(500)
 }
 
-fn default_adc_serial_number1() -> String {
-    "".into()
-}
-
-fn default_adc_serial_number2() -> String {
-    "".into()
-}
-
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -143,10 +135,6 @@ pub struct Config {
     pub formula_cross: String,
     #[serde(default = "default_web_port")]
     pub web_port: u32,
-    #[serde(default = "default_adc_serial_number1")]
-    pub adc_serial_number1: String,
-    #[serde(default = "default_adc_serial_number2")]
-    pub adc_serial_number2: String,
 }
 
 impl Config {
@@ -170,8 +158,6 @@ impl Config {
             formula_coax: default_formula_coax(),
             formula_cross: default_formula_cross(),
             web_port: default_web_port(),
-            adc_serial_number1: default_adc_serial_number1(),
-            adc_serial_number2: default_adc_serial_number2(),
         }
     }
 }
