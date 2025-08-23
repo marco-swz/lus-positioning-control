@@ -12,6 +12,7 @@ use lus_positioning_control::{
 use pprof::criterion::{Output, PProfProfiler};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
+    println!("cp1");
     let mut config = Config::default();
     let limits = [
         [config.limit_min_coax, config.limit_max_coax],
@@ -39,6 +40,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     // let mut port = lus_positioning_control::zaber::init_zaber_mock(&config).unwrap();
     let mut port = lus_positioning_control::zaber::init_zaber(&config).unwrap();
     let mut adcs = init_adc().unwrap();
+    println!("adcs");
     let config = Arc::new(RwLock::new(config));
     let shared_state = SharedState {
         target: [0, 0],
