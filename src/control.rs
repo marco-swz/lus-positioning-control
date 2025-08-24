@@ -5,10 +5,10 @@ use crate::{
         Adc, ZaberConn,
     },
 };
-use ads1x1x::{channel::{DifferentialA0A1, DifferentialA2A3}, Ads1x1x, ComparatorMode, FullScaleRange, TargetAddr};
+use ads1x1x::{channel::{DifferentialA0A1, DifferentialA2A3}, Ads1x1x, FullScaleRange, TargetAddr};
 use anyhow::{anyhow, Result};
 use evalexpr::Value;
-use ftdi_embedded_hal::{eh0::adc::Channel, libftd2xx::{self}, FtHal};
+use ftdi_embedded_hal::{libftd2xx::{self}, FtHal};
 use std::sync::Arc;
 use rayon::prelude::*;
 
@@ -34,7 +34,14 @@ pub fn init_adc() -> Result<[Adc; 2]> {
         let Ok(i2c) = hal.i2c() else {
             return Err(anyhow!("Failed to create I2C device"));
         };
-        let mut adc = Ads1x1x::new_ads1115(i2c, TargetAddr::default());
+        let adc = Ads1x1x::new_ads1115(i2c, TargetAddr::default());
+
+        let Ok(adc) = adc.into_continuous() else {
+            return Err(anyhow!("Failed set ADC continuous mode"));
+        };
+        let Ok(mut adc) = adc.into_one_shot() else {
+            return Err(anyhow!("Failed set ADC one shot mode"));
+        };
 
         let Ok(val) = nb::block!(adc.read(DifferentialA2A3)) else {
             return Err(anyhow!("Failed to read index voltage"));

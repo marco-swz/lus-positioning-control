@@ -6,16 +6,15 @@ use std::{
 
 use anyhow::{anyhow, Result};
 use axum::{
-    extract::{
-        self, ws::{Message, WebSocket}, Path, State, WebSocketUpgrade
-    },
     http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::{get, post},
     Form, Json, Router,
 };
+use axum::extract::{
+        self, ws::{Message, WebSocket}, State, WebSocketUpgrade
+    };
 use crossbeam_channel::Sender;
-use ftdi_embedded_hal::libftd2xx::{self, FtdiCommon};
 use futures::{SinkExt, StreamExt};
 use serde_json;
 
