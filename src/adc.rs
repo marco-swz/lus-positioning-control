@@ -128,7 +128,7 @@ pub async fn get_adc_module(config: &Config) -> Result<Box<dyn AdcBackend>> {
     }
 }
 
-pub fn read_voltage(adc: &mut Adc) -> Result<f64> {
+fn read_voltage(adc: &mut Adc) -> Result<f64> {
     let Ok(raw) = adc.read() else {
         return Err(anyhow!("Failed to read from ADC"));
     };

@@ -165,6 +165,7 @@ impl Config {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum ControlStatus {
     Stopped,
+    Init,
     Running,
     Error,
 }
@@ -175,6 +176,7 @@ impl Display for ControlStatus {
             Self::Running => "Running",
             Self::Stopped => "Stopped",
             Self::Error => "Error",
+            Self::Init => "Initializing",
         };
         write!(f, "{}", text)
     }

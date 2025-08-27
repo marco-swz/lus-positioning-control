@@ -3,11 +3,7 @@ use crossbeam_channel::bounded;
 use std::sync::{Arc, RwLock};
 
 use lus_positioning_control::{
-    control::init,
-    opcua::run_opcua,
-    utils::{read_config, write_config, Config, ControlStatus, ExecState, SharedState},
-    web::{run_web_server, WebState},
-    zaber::get_axis_port,
+    adc::get_adc_module, control::{get_voltage_conversion, init}, opcua::run_opcua, utils::{read_config, write_config, Config, ControlStatus, ExecState, SharedState}, web::{run_web_server, WebState}, zaber::get_axis_port
 };
 
 fn main() {
@@ -79,17 +75,42 @@ fn main() {
             let _ = rx_start.try_recv();
         }
 
+        state.shared.control_state = ControlStatus::Init;
+        state.shared.timestamp = Local::now();
+        {
+            let mut out = state.out_channel.write().unwrap();
+            *out = state.shared.clone();
+        }
+        let config = {
+            state.config.read().unwrap().clone()
+        };
+
+        let funcs_voltage_to_target = get_voltage_conversion(&mut state, &config);
+
+        let rx_stop = state.rx_stop.clone();
+        let a = futures::executor::block_on(async move {
+            let handle = tokio::spawn(async move {
+                let axis_backend = get_axis_port(&config).await;
+                let adc_backend = get_adc_module(&config).await;
+                return (axis_backend, adc_backend);
+            });
+
+            tokio::select!{
+                _ = rx_stop.recv() => {
+
+                }
+            }
+
+        });
+
         state.shared.control_state = ControlStatus::Running;
         state.shared.timestamp = Local::now();
         {
             let mut out = state.out_channel.write().unwrap();
             *out = state.shared.clone();
         }
+        match run_control_loop(backend, callbacks);
 
-        let axis_port = get_axis_port(&state.config);
-        let callbacks = get_callbacks();
-        init_backend(backend);
-        run_control_loop(backend, callbacks);
         tracing::debug!("trying to init control");
         match init(&mut state) {
             Ok(_) => {

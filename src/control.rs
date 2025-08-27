@@ -1,52 +1,60 @@
 use crate::{
-    adc::AdcBackend, utils::{self, Config, ExecState}, zaber::{mm_to_steps, AxisBackend}
+    adc::AdcBackend,
+    utils::{self, Config, ExecState},
+    zaber::{mm_to_steps, AxisBackend},
 };
 use anyhow::Result;
 use evalexpr::Value;
 use std::sync::Arc;
 
 pub fn get_voltage_conversion(
-    mut state: &mut ExecState,
+    state: &mut ExecState,
     config: &Config,
 ) -> Result<[Box<dyn Fn(&[f64; 2]) -> Result<u32>>; 2]> {
     match config.control_mode {
         utils::ControlMode::Manual => {
             tracing::debug!("starting in control mode Manual");
-            let funcs_voltage_to_target = [0, 1]
-                .map(|i| {
-                    let targets_shared = Arc::clone(&state.target_manual);
-                    move |_voltages: &[f64; 2]| {
-                        let targets = targets_shared.read().unwrap();
-
-                        return Ok(targets[i]);
-                    }
-                })
-                .map(|func| Box::new(func));
-            return Ok(funcs_voltage_to_target);
+            return Ok([
+                Box::new(get_voltage_conversion_manual(state, 0)?),
+                Box::new(get_voltage_conversion_manual(state, 1)?),
+            ])
         }
 
         utils::ControlMode::Tracking => {
-            tracing::debug!("starting in control mode Tracking");
-            let funcs_voltage_to_target = [
-                evalexpr::build_operator_tree(&config.formula_coax)?,
-                evalexpr::build_operator_tree(&config.formula_cross)?,
-            ]
-            .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
-                move |voltages: &[f64; 2]| {
-                    let context = evalexpr::context_map! {
-                        "v1" => Value::Float(voltages[0]),
-                        "v2" => Value::Float(voltages[1]),
-                    }?;
-
-                    let target = f.eval_number_with_context(&context)?;
-                    let target = mm_to_steps(target);
-
-                    return Ok(target);
-                }
-            }).map(|func| Box::new(func));
-            return Ok(funcs_voltage_to_target);
+            return Ok([
+                Box::new(get_voltage_conversion_formula(&config.formula_coax)?),
+                Box::new(get_voltage_conversion_formula(&config.formula_cross)?),
+            ])
         }
     }
+}
+
+fn get_voltage_conversion_manual(state: &mut ExecState, axis_index: usize) -> Result<impl Fn(&[f64; 2]) -> Result<u32>> {
+    let targets_shared = Arc::clone(&state.target_manual);
+    let func = move |_voltages: &[f64; 2]| {
+        let targets = targets_shared.read().unwrap();
+
+        return Ok(targets[axis_index]);
+    };
+    return Ok(func);
+}
+
+fn get_voltage_conversion_formula(formula: &str) -> Result<impl Fn(&[f64; 2]) -> Result<u32>> {
+    tracing::debug!("starting in control mode Tracking");
+    let formula: evalexpr::Node<evalexpr::DefaultNumericTypes> =
+        evalexpr::build_operator_tree(formula)?;
+    let func = move |voltages: &[f64; 2]| {
+        let context = evalexpr::context_map! {
+            "v1" => Value::Float(voltages[0]),
+            "v2" => Value::Float(voltages[1]),
+        }?;
+
+        let target = formula.eval_number_with_context(&context)?;
+        let target = mm_to_steps(target);
+
+        return Ok(target);
+    };
+    return Ok(func);
 }
 
 pub fn run_control_loop(
@@ -83,7 +91,7 @@ pub fn run_control_loop(
 }
 
 #[inline]
-pub fn compute_control (
+pub fn compute_control(
     state: &mut ExecState,
     axis_backend: &mut Box<dyn AxisBackend>,
     adc_backend: &mut Box<dyn AdcBackend>,
@@ -104,7 +112,7 @@ pub fn compute_control (
         tracing::debug!("Position {}: target={} actual={}", i, target, positions[i]);
 
         if target > limits[i][0] && target < limits[i][1] && target != positions[i] {
-            axis_backend.move_axis(i+1, target)?
+            axis_backend.move_axis(i + 1, target)?
         }
     }
 
