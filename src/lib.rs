@@ -4,3 +4,4 @@ pub mod simulation;
 pub mod utils;
 pub mod web;
 pub mod zaber;
+pub mod adc;

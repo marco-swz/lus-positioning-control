@@ -1,210 +1,59 @@
 use crate::{
-    utils::{self, ExecState},
-    zaber::{
-        get_pos_zaber, init_zaber, init_zaber_mock, mm_to_steps, move_coax_zaber, move_cross_zaber,
-        Adc, ZaberConn,
-    },
+    adc::AdcBackend, utils::{self, Config, ExecState}, zaber::{mm_to_steps, AxisBackend}
 };
-use ads1x1x::{channel::{DifferentialA0A1, DifferentialA2A3}, Ads1x1x, FullScaleRange, TargetAddr};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use evalexpr::Value;
-use ftdi_embedded_hal::{libftd2xx::{self}, FtHal};
 use std::sync::Arc;
-use rayon::prelude::*;
 
-pub trait Backend {
-    fn get_target(&mut self) -> Result<(u32, u32, f64, f64)>;
-    fn get_pos(&mut self) -> Result<(u32, u32, bool, bool)>;
-    fn move_coax(&mut self, target: u32) -> Result<()>;
-    fn move_cross(&mut self, target: u32) -> Result<()>;
-}
-
-pub fn init_adc() -> Result<[Adc; 2]> {
-    tracing::debug!("initializing adcs");
-    match libftd2xx::num_devices()? {
-        0..2 => return Err(anyhow!("Too few adc modules connected! Make sure two are plugged in.")),
-        2 => (),
-        3.. => return Err(anyhow!("Too many adc modules connected! Make sure two are plugged in.")),
-    };
-
-    let adcs: [Result<(Adc, u8)>; 2] = [0, 1].map(|i| {
-        let device = libftd2xx::Ftdi::with_index(i)?;
-        let device = libftd2xx::Ft232h::try_from(device)?;
-        let hal = FtHal::init_freq(device, 400_000)?;
-        let Ok(i2c) = hal.i2c() else {
-            return Err(anyhow!("Failed to create I2C device"));
-        };
-        let adc = Ads1x1x::new_ads1115(i2c, TargetAddr::default());
-
-        let Ok(adc) = adc.into_continuous() else {
-            return Err(anyhow!("Failed set ADC continuous mode"));
-        };
-        let Ok(mut adc) = adc.into_one_shot() else {
-            return Err(anyhow!("Failed set ADC one shot mode"));
-        };
-
-        let Ok(val) = nb::block!(adc.read(DifferentialA2A3)) else {
-            return Err(anyhow!("Failed to read index voltage"));
-        };
-
-        let idx = match val {
-            ..10 => 1,
-            10.. => 2,
-        };
-
-        tracing::debug!("adc index value: {}", val);
-
-        let Ok(mut adc) = adc.into_continuous() else {
-            return Err(anyhow!("Failed set ADC continuous mode"));
-        };
-        let Ok(_) =  adc.select_channel(DifferentialA0A1) else {
-            return Err(anyhow!("Failed to set channel to differentialA0A1"));
-        };
-        let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
-            return Err(anyhow!("Failed set ADC range"));
-        };
-
-        return Ok((adc, idx));
-    });
-
-    let [adc1, adc2] = adcs;
-    let (adc1, idx1) = adc1?;
-    let (adc2, idx2) = adc2?;
-
-    return Ok(match [idx1, idx2] {
-        [1, 2] => [adc1, adc2],
-        [2, 1] => [adc2, adc1],
-        _ => Err(anyhow!("Invalid adc configuration"))?,
-    });
-}
-
-pub fn init(state: &mut ExecState) -> Result<()> {
-    let config = { state.config.read().unwrap().clone() };
-
-    state.shared.error = None;
-    if let Ok(mut out) = state.out_channel.try_write() {
-        *out = state.shared.clone();
-        drop(out);
-    }
-
-    tracing::debug!("Init control with backend {:?}", config.control_mode);
-    match config.mock_zaber {
-        false => match config.mock_adc {
-            false => {
-                let adcs = init_adc()?;
-                init_backend(init_zaber(&config)?, adcs, state, [read_voltage_adc, read_voltage_adc])
-            }
-            true => init_backend(init_zaber(&config)?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
-        },
-        true => match config.mock_adc {
-            false => {
-                let adcs = init_adc()?;
-                init_backend(init_zaber_mock(&config)?, adcs, state, [read_voltage_adc, read_voltage_adc])
-            },
-            true => init_backend(init_zaber_mock(&config)?, [0., 0.], state, [read_voltage_mock, read_voltage_mock]),
-        },
-    }
-}
-
-fn read_voltage_adc(adc: &mut Adc) -> Result<f64> {
-    read_voltage(adc)
-}
-
-fn read_voltage_mock(val: &mut f64) -> Result<f64> {
-    Ok(*val)
-}
-
-fn init_backend<T, V: Send + Sync>(
-    mut port: ZaberConn<T>,
-    mut adcs: [V; 2],
-    state: &mut ExecState,
-    mut funcs_read_voltage: [fn(&mut V) -> Result<f64>; 2],
-) -> Result<()>
-where
-    T: zproto::backend::Backend,
-{
-    loop {
-        let config = {
-            let s = state.config.read().unwrap();
-            s.clone()
-        };
-
-        let result = match config.control_mode {
-            utils::ControlMode::Manual => {
-                tracing::debug!("starting in control mode Manual");
-                let funcs_voltage_to_target = [0, 1].map(|i| {
+pub fn get_voltage_conversion(
+    mut state: &mut ExecState,
+    config: &Config,
+) -> Result<[Box<dyn Fn(&[f64; 2]) -> Result<u32>>; 2]> {
+    match config.control_mode {
+        utils::ControlMode::Manual => {
+            tracing::debug!("starting in control mode Manual");
+            let funcs_voltage_to_target = [0, 1]
+                .map(|i| {
                     let targets_shared = Arc::clone(&state.target_manual);
                     move |_voltages: &[f64; 2]| {
                         let targets = targets_shared.read().unwrap();
 
                         return Ok(targets[i]);
                     }
-                });
-                run(
-                    state,
-                    &mut port,
-                    &mut adcs,
-                    &mut funcs_read_voltage,
-                    funcs_voltage_to_target,
-                    get_pos_zaber,
-                    [move_coax_zaber, move_cross_zaber],
-                )
-            }
+                })
+                .map(|func| Box::new(func));
+            return Ok(funcs_voltage_to_target);
+        }
 
-            utils::ControlMode::Tracking => {
-                tracing::debug!("starting in control mode Tracking");
-                let funcs_voltage_to_target = [
-                    evalexpr::build_operator_tree(&config.formula_coax)?,
-                    evalexpr::build_operator_tree(&config.formula_cross)?,
-                ]
-                .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
-                    move |voltages: &[f64; 2]| {
-                        let context = evalexpr::context_map! {
-                            "v1" => Value::Float(voltages[0]),
-                            "v2" => Value::Float(voltages[1]),
-                        }?;
+        utils::ControlMode::Tracking => {
+            tracing::debug!("starting in control mode Tracking");
+            let funcs_voltage_to_target = [
+                evalexpr::build_operator_tree(&config.formula_coax)?,
+                evalexpr::build_operator_tree(&config.formula_cross)?,
+            ]
+            .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
+                move |voltages: &[f64; 2]| {
+                    let context = evalexpr::context_map! {
+                        "v1" => Value::Float(voltages[0]),
+                        "v2" => Value::Float(voltages[1]),
+                    }?;
 
-                        let target = f.eval_number_with_context(&context)?;
-                        let target = mm_to_steps(target);
+                    let target = f.eval_number_with_context(&context)?;
+                    let target = mm_to_steps(target);
 
-                        return Ok(target);
-                    }
-                });
-
-                run(
-                    state,
-                    &mut port,
-                    &mut adcs,
-                    &mut funcs_read_voltage,
-                    funcs_voltage_to_target,
-                    get_pos_zaber,
-                    [move_coax_zaber, move_cross_zaber],
-                )
-            }
-        };
-
-        // If only the control mode changes,
-        // zaber does not need to re-initalized.
-        let config_current = state.config.read().unwrap();
-        tracing::debug!(
-            "checking control mode: old={:?}, new={:?}",
-            config.control_mode,
-            config_current.control_mode
-        );
-        if config.control_mode == config_current.control_mode {
-            return result;
-        };
+                    return Ok(target);
+                }
+            }).map(|func| Box::new(func));
+            return Ok(funcs_voltage_to_target);
+        }
     }
 }
 
-pub fn run<'a, T, V: Send + Sync>(
+pub fn run_control_loop(
     mut state: &mut ExecState,
-    mut backend: &mut T,
-    adcs: &mut [V; 2],
-    funcs_read_voltage: &mut [fn(&mut V) -> Result<f64>; 2],
+    mut axis_backend: Box<dyn AxisBackend>,
+    mut adc_backend: Box<dyn AdcBackend>,
     funcs_voltage_to_target: [impl Fn(&[f64; 2]) -> Result<u32>; 2],
-    func_get_pos: fn(&mut T) -> Result<([bool; 2], [u32; 2])>,
-    funcs_move: [fn(&mut T, u32) -> Result<()>; 2],
 ) -> Result<()> {
     let config = state.config.read().unwrap();
     let cycle_time = config.cycle_time_ms;
@@ -216,14 +65,11 @@ pub fn run<'a, T, V: Send + Sync>(
 
     tracing::info!("Starting control loop");
     loop {
-        compute_control::<T, V>(
+        compute_control(
             &mut state,
-            &mut backend,
-            adcs,
-            funcs_read_voltage,
+            &mut axis_backend,
+            &mut adc_backend,
             &funcs_voltage_to_target,
-            func_get_pos,
-            &funcs_move,
             &limits,
         )?;
 
@@ -237,30 +83,16 @@ pub fn run<'a, T, V: Send + Sync>(
 }
 
 #[inline]
-pub fn compute_control<'a, T, V: Send + Sync>(
+pub fn compute_control (
     state: &mut ExecState,
-    backend: &mut T,
-    adcs: &mut [V; 2],
-    funcs_read_voltage: &mut [fn(&mut V) -> Result<f64>; 2],
+    axis_backend: &mut Box<dyn AxisBackend>,
+    adc_backend: &mut Box<dyn AdcBackend>,
     funcs_voltage_to_target: &[impl Fn(&[f64; 2]) -> Result<u32>; 2],
-    func_get_pos: fn(&mut T) -> Result<([bool; 2], [u32; 2])>,
-    funcs_move: &[fn(&mut T, u32) -> Result<()>; 2],
     limits: &[[u32; 2]; 2],
 ) -> Result<()> {
-    // TODO(marco): Try to get [f64; 2] without Vec
-    let voltage_readings: Vec<Result<f64>> = adcs
-        .par_iter_mut()
-        .enumerate()
-        .map(|(i, adc)| funcs_read_voltage[i](adc))
-        .collect();
+    let voltages = adc_backend.read_voltage()?;
 
-    let (is_busy, positions) = func_get_pos(backend)?;
-
-    // Just to convert into [f64; 2]
-    let mut voltages = [0.; 2];
-    for (i, v) in voltage_readings.into_iter().enumerate() {
-        voltages[i] = v?;
-    }
+    let (is_busy, positions) = axis_backend.get_pos()?;
 
     for i in 0..2 {
         let target = funcs_voltage_to_target[i](&voltages)?;
@@ -272,7 +104,7 @@ pub fn compute_control<'a, T, V: Send + Sync>(
         tracing::debug!("Position {}: target={} actual={}", i, target, positions[i]);
 
         if target > limits[i][0] && target < limits[i][1] && target != positions[i] {
-            (funcs_move[i])(backend, target)?;
+            axis_backend.move_axis(i+1, target)?
         }
     }
 
@@ -282,17 +114,6 @@ pub fn compute_control<'a, T, V: Send + Sync>(
     }
 
     return Ok(());
-}
-
-pub fn read_voltage(adc: &mut Adc) -> Result<f64> {
-    let Ok(raw) = adc.read() else {
-        return Err(anyhow!("Failed to read from ADC"));
-    };
-    let voltage = raw as f64 * 4.069 / 32767.;
-
-    tracing::debug!("voltage read {}", voltage);
-
-    Ok(voltage)
 }
 
 #[cfg(test)]
@@ -390,12 +211,5 @@ mod tests {
             [move_coax_zaber, move_cross_zaber],
         )
         .unwrap();
-    }
-
-    #[test]
-    fn testing() {
-        let a = 1 + 2;
-
-        assert_eq!(a, 3);
     }
 }

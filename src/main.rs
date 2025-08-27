@@ -7,6 +7,7 @@ use lus_positioning_control::{
     opcua::run_opcua,
     utils::{read_config, write_config, Config, ControlStatus, ExecState, SharedState},
     web::{run_web_server, WebState},
+    zaber::get_axis_port,
 };
 
 fn main() {
@@ -85,6 +86,10 @@ fn main() {
             *out = state.shared.clone();
         }
 
+        let axis_port = get_axis_port(&state.config);
+        let callbacks = get_callbacks();
+        init_backend(backend);
+        run_control_loop(backend, callbacks);
         tracing::debug!("trying to init control");
         match init(&mut state) {
             Ok(_) => {
