@@ -28,7 +28,7 @@ const BODY: &str = include_str!("index.html");
 pub struct WebState {
     pub zaber_state: Arc<RwLock<SharedState>>,
     pub tx_start_control: Sender<()>,
-    pub tx_stop_control: Sender<()>,
+    pub tx_stop_control: tokio::sync::broadcast::Sender<()>,
     pub target_manual: Arc<RwLock<[u32; 2]>>,
     pub config: Arc<RwLock<utils::Config>>,
 }
@@ -100,7 +100,7 @@ async fn handle_post_mode(
         state.config.write().unwrap().control_mode = new_mode;
     }
 
-    state.tx_stop_control.try_send(())?;
+    state.tx_stop_control.send(())?;
     tracing::debug!("POST mode exit");
     Ok(())
 }
@@ -220,7 +220,7 @@ async fn handle_post_config(
     // If the user changes the config twice without starting
     // in between, the stop channel would be full and this call
     // errors, which doesn't matter.
-    let _ = state.tx_stop_control.try_send(());
+    let _ = state.tx_stop_control.send(())?;
 
     let save_result = write_config(&config_new);
 
@@ -241,7 +241,7 @@ async fn handle_post_start(State(state): State<WebState>) -> Result<(), AppError
 
 async fn handle_post_stop(State(state): State<WebState>) -> Result<(), AppError> {
     tracing::debug!("POST stop requested");
-    state.tx_stop_control.try_send(())?;
+    state.tx_stop_control.send(())?;
     tracing::debug!("POST stop exit");
     Ok(())
 }

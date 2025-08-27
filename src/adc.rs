@@ -121,7 +121,7 @@ pub async fn init_adcs() -> Result<[Adc; 2]> {
     });
 }
 
-pub async fn get_adc_module(config: &Config) -> Result<Box<dyn AdcBackend>> {
+pub async fn get_adc_module(config: &Config) -> Result<Box<dyn AdcBackend + Send>> {
     match config.mock_adc {
         true => return Ok(Box::new(MockAdcModule::new(config).await?)),
         false => return Ok(Box::new(AdcModule::new(config).await?)),

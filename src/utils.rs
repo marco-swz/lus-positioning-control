@@ -8,14 +8,13 @@ use std::{
 };
 
 use chrono::{DateTime, Local};
-use crossbeam_channel::Receiver;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 
 use crate::zaber::{MAX_POS, MAX_SPEED};
 
 pub type StateChannel = Arc<RwLock<SharedState>>;
-pub type StopChannel = Receiver<()>;
+pub type StopChannel = tokio::sync::broadcast::Receiver<()>;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ControlMode {
@@ -197,10 +196,28 @@ pub struct SharedState {
 pub struct ExecState {
     pub shared: SharedState,
     pub out_channel: StateChannel,
-    pub rx_stop: StopChannel,
+    pub tx_stop: tokio::sync::broadcast::Sender<()>,
     pub target_manual: Arc<RwLock<[u32; 2]>>,
     pub config: Arc<RwLock<Config>>,
 }
+
+impl ExecState {
+    pub fn set_error(&mut self, text: String) {
+        self.shared.control_state = ControlStatus::Error;
+        self.shared.error = Some(text);
+        self.shared.timestamp = Local::now();
+        let mut out = self.out_channel.write().unwrap();
+        *out = self.shared.clone();
+    }
+
+    pub fn set_status(&mut self, status: ControlStatus) {
+        self.shared.control_state = status;
+        self.shared.timestamp = Local::now();
+        let mut out = self.out_channel.write().unwrap();
+        *out = self.shared.clone();
+    }
+}
+
 
 pub fn read_config() -> Result<Config> {
     match std::fs::read_to_string("config.toml") {

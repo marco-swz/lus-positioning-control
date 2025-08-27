@@ -1,15 +1,51 @@
 use chrono::Local;
 use crossbeam_channel::bounded;
 use std::sync::{Arc, RwLock};
+use anyhow::Result;
 
 use lus_positioning_control::{
-    adc::get_adc_module, control::{get_voltage_conversion, init}, opcua::run_opcua, utils::{read_config, write_config, Config, ControlStatus, ExecState, SharedState}, web::{run_web_server, WebState}, zaber::get_axis_port
+    adc::{get_adc_module, AdcBackend},
+    control::{get_voltage_conversion, run_control_loop},
+    opcua::run_opcua,
+    utils::{read_config, write_config, Config, ControlStatus, ExecState, SharedState},
+    web::{run_web_server, WebState},
+    zaber::{get_axis_port, AxisBackend},
 };
+
+fn init_backend(
+    config: Config,
+    mut rx_stop: tokio::sync::broadcast::Receiver<()>,
+) -> Result<Option<(Box<dyn AxisBackend + Send>, Box<dyn AdcBackend + Send>)>> {
+    let backend = futures::executor::block_on(async move {
+        let handle = async move {
+            let axis_backend = get_axis_port(&config).await;
+            let adc_backend = get_adc_module(&config).await;
+            return (axis_backend, adc_backend);
+        };
+
+        let mut backend = None;
+        tokio::select! {
+            _ = rx_stop.recv() => {
+            },
+            be = handle => {
+                backend = Some(be);
+            }
+        };
+
+        return backend;
+    });
+    let Some(backend) = backend else {
+        return Ok(None);
+    };
+    let (axis_backend, adc_backend) = backend;
+
+    return Ok(Some((axis_backend?, adc_backend?)));
+}
 
 fn main() {
     tracing_subscriber::fmt::init();
 
-    let (tx_stop, rx_stop) = bounded::<()>(1);
+    let (tx_stop, mut rx_stop) = tokio::sync::broadcast::channel(1);
     let (tx_start, rx_start) = bounded::<()>(1);
 
     let target_manual = Arc::new(RwLock::new([0; 2]));
@@ -35,7 +71,7 @@ fn main() {
         shared: shared_state.clone(),
         config: Arc::new(RwLock::new(config.clone())),
         out_channel: Arc::clone(&state_channel),
-        rx_stop: rx_stop.clone(),
+        tx_stop: tx_stop.clone(),
         target_manual: Arc::clone(&target_manual),
     };
 
@@ -58,78 +94,50 @@ fn main() {
 
     state.shared.control_state = ControlStatus::Stopped;
     loop {
-        {
-            let mut out = state.out_channel.write().unwrap();
-            *out = state.shared.clone();
-        }
         tracing::debug!("control waiting for start");
         let _ = rx_start.recv();
         tracing::debug!("start signal received");
 
         // There might be more signals in channel,
         // they need to be cleared.
-        while !state.rx_stop.is_empty() {
-            let _ = state.rx_stop.try_recv();
+        while !rx_stop.is_empty() {
+            let _ = rx_stop.blocking_recv();
         }
         while !rx_start.is_empty() {
             let _ = rx_start.try_recv();
         }
 
-        state.shared.control_state = ControlStatus::Init;
-        state.shared.timestamp = Local::now();
-        {
-            let mut out = state.out_channel.write().unwrap();
-            *out = state.shared.clone();
-        }
-        let config = {
-            state.config.read().unwrap().clone()
+        state.set_status(ControlStatus::Init);
+        let config = { state.config.read().unwrap().clone() };
+
+        let funcs_voltage_to_target = get_voltage_conversion(&mut state, &config).unwrap();
+
+        let rx_stop = state.tx_stop.subscribe();
+
+        tracing::debug!("trying to init backend");
+        let backend = match init_backend(config.clone(), rx_stop) {
+            Err(e) => {
+                state.set_error(e.to_string());
+                continue;
+            }
+            Ok(b) => b,
         };
 
-        let funcs_voltage_to_target = get_voltage_conversion(&mut state, &config);
+        let Some(backend) = backend else {
+            state.set_status(ControlStatus::Stopped);
+            continue;
+        };
 
-        let rx_stop = state.rx_stop.clone();
-        let a = futures::executor::block_on(async move {
-            let handle = tokio::spawn(async move {
-                let axis_backend = get_axis_port(&config).await;
-                let adc_backend = get_adc_module(&config).await;
-                return (axis_backend, adc_backend);
-            });
+        let (axis_backend, adc_backend) = backend;
 
-            tokio::select!{
-                _ = rx_stop.recv() => {
-
-                }
-            }
-
-        });
-
-        state.shared.control_state = ControlStatus::Running;
-        state.shared.timestamp = Local::now();
-        {
-            let mut out = state.out_channel.write().unwrap();
-            *out = state.shared.clone();
-        }
-        match run_control_loop(backend, callbacks);
-
-        tracing::debug!("trying to init control");
-        match init(&mut state) {
+        state.set_status(ControlStatus::Running);
+        match run_control_loop(&mut state, axis_backend, adc_backend, funcs_voltage_to_target) {
             Ok(_) => {
-                state.shared.control_state = ControlStatus::Stopped;
-                state.shared.timestamp = Local::now();
-                let mut out = state.out_channel.write().unwrap();
-                *out = state.shared.clone();
-                drop(out);
+                state.set_status(ControlStatus::Stopped);
             }
             Err(e) => {
                 tracing::error!("control error: {}", &e);
-                state.shared.control_state = ControlStatus::Error;
-                state.shared.error = Some(e.to_string());
-                state.shared.timestamp = Local::now();
-
-                {
-                    let mut out = state.out_channel.write().unwrap();
-                    *out = state.shared.clone();
-                }
+                state.set_error(e.to_string());
             }
         }
     }

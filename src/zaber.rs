@@ -1,12 +1,12 @@
 use crate::{simulation::Simulator, utils::Config};
 use anyhow::{anyhow, Result};
 use tokio::task;
-use zproto::ascii::port::OpenGeneralOptions;
-use zproto::ascii::{
-    response::{check, Status},
-    Port,
-};
+use zproto::ascii::port::handlers::SendHandlers;
+use zproto::ascii::port::{DefaultTag, OpenGeneralOptions};
+use zproto::ascii::response::{check, Status};
 use zproto::backend::Serial;
+
+type Port<T> = zproto::ascii::Port<'static, T, DefaultTag, SendHandlers<'static>>;
 
 pub const MICROSTEP_SIZE: f64 = 0.49609375; //µm
                                             // pub const VELOCITY_FACTOR: f64 = 1.6384;
@@ -18,7 +18,7 @@ pub trait AxisBackend {
     fn move_axis(&mut self, axis_index: usize, target_pos: u32) -> Result<()>;
 }
 
-pub async fn get_axis_port(config: &Config) -> Result<Box<dyn AxisBackend>> {
+pub async fn get_axis_port(config: &Config) -> Result<Box<dyn AxisBackend + Send>> {
     match config.mock_zaber {
         true => return Ok(Box::new(MockZaberPort::new(config).await?)),
         false => return Ok(Box::new(ZaberPort::new(config).await?)),
@@ -26,15 +26,17 @@ pub async fn get_axis_port(config: &Config) -> Result<Box<dyn AxisBackend>> {
 }
 
 pub struct ZaberPort {
-    pub port: Port<'static, Serial>,
+    pub port: Port<Serial>,
 }
 
 impl ZaberPort {
     pub async fn new(config: &Config) -> Result<Self> {
-        return match Port::open_serial(&config.serial_device) {
-            Ok(mut zaber_conn) => {
-                init_axes(&mut zaber_conn, &config).await?;
-                return Ok(ZaberPort { port: zaber_conn });
+        return match zproto::ascii::Port::open_serial(&config.serial_device) {
+            Ok(port) => {
+                let mut port = port.try_into_send()
+                    .map_err(|_| anyhow!("Failed to convert zaber port into send"))?;
+                init_axes(&mut port, &config).await?;
+                return Ok(ZaberPort { port });
             }
             Err(e) => Err(anyhow!(
                 "Failed to open Zaber serial port '{}': {}",
@@ -60,7 +62,7 @@ impl AxisBackend for ZaberPort {
 }
 
 pub struct MockZaberPort {
-    pub port: Port<'static, Simulator>,
+    pub port: Port<Simulator>,
 }
 
 impl MockZaberPort {
@@ -69,7 +71,9 @@ impl MockZaberPort {
         let mut opt = OpenGeneralOptions::new();
         opt.checksums(false);
         opt.message_ids(false);
-        let mut sim = opt.open(sim);
+        let sim = opt.open(sim);
+        let mut sim = sim.try_into_send()
+            .map_err(|_| anyhow!("Failed to convert zaber port into send"))?;
         init_axes(&mut sim, &config).await?;
         return Ok(MockZaberPort { port: sim });
     }
@@ -89,23 +93,24 @@ impl AxisBackend for MockZaberPort {
     }
 }
 
-async fn init_axes<T>(zaber_conn: &mut Port<'static, T>, config: &Config) -> Result<()>
+async fn init_axes<T>(zaber_conn: &mut Port<T>, config: &Config) -> Result<()>
 where
     T: zproto::backend::Backend,
 {
-    zaber_conn.command_reply_n("system restore", 2, check::unchecked())?;
-    //.unwrap_or(Err(anyhow!("Failed restore axes"))?);
+    zaber_conn.command_reply_n("system restore", 2, check::unchecked())
+        .map_err(|_| anyhow!("Failed restore axes"))?;
     task::yield_now().await;
 
     let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
     task::yield_now().await;
 
-    zaber_conn.poll_until_idle(1, check::flag_ok())?;
+    zaber_conn.poll_until_idle(1, check::flag_ok())
+        .map_err(|_| anyhow!("Failed to wait for coaxial axis to be idle"))?;
     task::yield_now().await;
-    //.unwrap_or(Err(anyhow!("Failed to wait for coaxial axis to be idle"))?);
-    zaber_conn.poll_until_idle(2, check::flag_ok())?;
+
+    zaber_conn.poll_until_idle(2, check::flag_ok())
+        .map_err(|_| anyhow!("Failed to wait for cross axis to be idle"))?;
     task::yield_now().await;
-    //.unwrap_or(Err(anyhow!("Failed to wait for cross axis to be idle"))?);
 
     zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
     task::yield_now().await;
@@ -183,7 +188,7 @@ where
 }
 
 pub fn get_pos_zaber<T: zproto::backend::Backend>(
-    zaber_conn: &mut Port<'static, T>,
+    zaber_conn: &mut Port<T>,
 ) -> Result<([bool; 2], [u32; 2])> {
     let mut pos = [0; 2];
     let mut is_busy = [false; 2];
@@ -223,7 +228,7 @@ pub fn get_pos_zaber<T: zproto::backend::Backend>(
 }
 
 pub fn move_coax_zaber<T: zproto::backend::Backend>(
-    zaber_conn: &mut Port<'static, T>,
+    zaber_conn: &mut Port<T>,
     pos: u32,
 ) -> Result<()> {
     let cmd = format!("lockstep 1 move abs {}", pos);
@@ -232,7 +237,7 @@ pub fn move_coax_zaber<T: zproto::backend::Backend>(
 }
 
 pub fn move_cross_zaber<T: zproto::backend::Backend>(
-    zaber_conn: &mut Port<'static, T>,
+    zaber_conn: &mut Port<T>,
     pos: u32,
 ) -> Result<()> {
     let cmd = format!("move abs {}", pos);

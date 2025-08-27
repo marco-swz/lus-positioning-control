@@ -71,6 +71,8 @@ pub fn run_control_loop(
     ];
     drop(config);
 
+    let mut rx_stop = state.tx_stop.subscribe();
+
     tracing::info!("Starting control loop");
     loop {
         compute_control(
@@ -81,7 +83,8 @@ pub fn run_control_loop(
             &limits,
         )?;
 
-        if let Ok(_) = state.rx_stop.recv_timeout(cycle_time) {
+        std::thread::sleep(cycle_time);
+        if let Ok(_) = rx_stop.try_recv() {
             break;
         }
     }
