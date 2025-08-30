@@ -22,8 +22,8 @@ pub struct AdcModule {
 }
 
 impl AdcModule {
-    pub async fn new(config: &Config) -> Result<Self> {
-        let [adc1, adc2] = init_adcs().await?;
+    pub fn new() -> Result<Self> {
+        let [adc1, adc2] = init_adcs()?;
         return Ok(AdcModule { adc1, adc2 });
     }
 }
@@ -43,7 +43,7 @@ impl AdcBackend for AdcModule {
 pub struct MockAdcModule {}
 
 impl MockAdcModule {
-    pub async fn new(config: &Config) -> Result<Self> {
+    pub fn new() -> Result<Self> {
         return Ok(MockAdcModule {});
     }
 }
@@ -54,7 +54,7 @@ impl AdcBackend for MockAdcModule {
     }
 }
 
-pub async fn init_adcs() -> Result<[Adc; 2]> {
+fn init_adcs() -> Result<[Adc; 2]> {
     tracing::debug!("initializing adcs");
     match libftd2xx::num_devices()? {
         0..2 => {
@@ -121,10 +121,10 @@ pub async fn init_adcs() -> Result<[Adc; 2]> {
     });
 }
 
-pub async fn get_adc_module(config: &Config) -> Result<Box<dyn AdcBackend + Send>> {
+pub fn get_adc_module(config: &Config) -> Result<Box<dyn AdcBackend + Send>> {
     match config.mock_adc {
-        true => return Ok(Box::new(MockAdcModule::new(config).await?)),
-        false => return Ok(Box::new(AdcModule::new(config).await?)),
+        true => return Ok(Box::new(MockAdcModule::new()?)),
+        false => return Ok(Box::new(AdcModule::new()?)),
     }
 }
 

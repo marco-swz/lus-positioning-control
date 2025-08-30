@@ -16,30 +16,12 @@ fn init_backend(
     config: Config,
     mut rx_stop: tokio::sync::broadcast::Receiver<()>,
 ) -> Result<Option<(Box<dyn AxisBackend + Send>, Box<dyn AdcBackend + Send>)>> {
-    let backend = futures::executor::block_on(async move {
-        let handle = async move {
-            let axis_backend = get_axis_port(&config).await;
-            let adc_backend = get_adc_module(&config).await;
-            return (axis_backend, adc_backend);
-        };
-
-        let mut backend = None;
-        tokio::select! {
-            _ = rx_stop.recv() => {
-            },
-            be = handle => {
-                backend = Some(be);
-            }
-        };
-
-        return backend;
-    });
-    let Some(backend) = backend else {
+    let Some(axis_backend) = get_axis_port(&config, rx_stop)? else {
         return Ok(None);
     };
-    let (axis_backend, adc_backend) = backend;
+    let adc_backend = get_adc_module(&config)?;
 
-    return Ok(Some((axis_backend?, adc_backend?)));
+    return Ok(Some((axis_backend, adc_backend)));
 }
 
 fn main() {

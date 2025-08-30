@@ -1,6 +1,5 @@
 use crate::{simulation::Simulator, utils::Config};
 use anyhow::{anyhow, Result};
-use tokio::task;
 use zproto::ascii::port::handlers::SendHandlers;
 use zproto::ascii::port::{DefaultTag, OpenGeneralOptions};
 use zproto::ascii::response::{check, Status};
@@ -18,10 +17,19 @@ pub trait AxisBackend {
     fn move_axis(&mut self, axis_index: usize, target_pos: u32) -> Result<()>;
 }
 
-pub async fn get_axis_port(config: &Config) -> Result<Box<dyn AxisBackend + Send>> {
+pub fn get_axis_port(
+    config: &Config,
+    rx_stop: tokio::sync::broadcast::Receiver<()>,
+) -> Result<Option<Box<dyn AxisBackend + Send>>> {
     match config.mock_zaber {
-        true => return Ok(Box::new(MockZaberPort::new(config).await?)),
-        false => return Ok(Box::new(ZaberPort::new(config).await?)),
+        true => return Ok(match MockZaberPort::new(config, rx_stop)? {
+            Some(port) => Some(Box::new(port)),
+            None => None,
+        }),
+        false => return Ok(match ZaberPort::new(config, rx_stop)? {
+            Some(port) => Some(Box::new(port)),
+            None => None,
+        }),
     }
 }
 
@@ -30,13 +38,17 @@ pub struct ZaberPort {
 }
 
 impl ZaberPort {
-    pub async fn new(config: &Config) -> Result<Self> {
+    pub fn new(config: &Config, rx_stop: tokio::sync::broadcast::Receiver<()>) -> Result<Option<Self>> {
         return match zproto::ascii::Port::open_serial(&config.serial_device) {
             Ok(port) => {
-                let mut port = port.try_into_send()
+                let mut port = port
+                    .try_into_send()
                     .map_err(|_| anyhow!("Failed to convert zaber port into send"))?;
-                init_axes(&mut port, &config).await?;
-                return Ok(ZaberPort { port });
+                let is_stopped = init_axes(&mut port, &config, rx_stop)?;
+                if is_stopped {
+                    return Ok(None);
+                }
+                return Ok(Some(ZaberPort { port }));
             }
             Err(e) => Err(anyhow!(
                 "Failed to open Zaber serial port '{}': {}",
@@ -66,16 +78,23 @@ pub struct MockZaberPort {
 }
 
 impl MockZaberPort {
-    pub async fn new(config: &Config) -> Result<Self> {
+    pub fn new(
+        config: &Config,
+        rx_stop: tokio::sync::broadcast::Receiver<()>,
+    ) -> Result<Option<Self>> {
         let sim = Simulator::new();
         let mut opt = OpenGeneralOptions::new();
         opt.checksums(false);
         opt.message_ids(false);
         let sim = opt.open(sim);
-        let mut sim = sim.try_into_send()
+        let mut sim = sim
+            .try_into_send()
             .map_err(|_| anyhow!("Failed to convert zaber port into send"))?;
-        init_axes(&mut sim, &config).await?;
-        return Ok(MockZaberPort { port: sim });
+        let is_stopped = init_axes(&mut sim, &config, rx_stop)?;
+        if is_stopped {
+            return Ok(None);
+        }
+        return Ok(Some(MockZaberPort { port: sim }));
     }
 }
 
@@ -93,98 +112,122 @@ impl AxisBackend for MockZaberPort {
     }
 }
 
-async fn init_axes<T>(zaber_conn: &mut Port<T>, config: &Config) -> Result<()>
+fn init_axes<T>(
+    port: &mut Port<T>,
+    config: &Config,
+    mut rx_stop: tokio::sync::broadcast::Receiver<()>,
+) -> Result<bool>
 where
     T: zproto::backend::Backend,
 {
-    zaber_conn.command_reply_n("system restore", 2, check::unchecked())
+    port.command_reply_n("system restore", 2, check::unchecked())
         .map_err(|_| anyhow!("Failed restore axes"))?;
-    task::yield_now().await;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    let _ = zaber_conn.command_reply_n("home", 2, check::flag_ok());
-    task::yield_now().await;
+    let _ = port.command_reply_n("home", 2, check::flag_ok());
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn.poll_until_idle(1, check::flag_ok())
+    port.poll_until_idle(1, check::flag_ok())
         .map_err(|_| anyhow!("Failed to wait for coaxial axis to be idle"))?;
-    task::yield_now().await;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn.poll_until_idle(2, check::flag_ok())
+    port.poll_until_idle(2, check::flag_ok())
         .map_err(|_| anyhow!("Failed to wait for cross axis to be idle"))?;
-    task::yield_now().await;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
-    task::yield_now().await;
+    port.command_reply_n("set comm.alert 0", 2, check::flag_ok())?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
     if config.offset_coax > 0 {
-        zaber_conn
-            .command_reply((1, format!("1 move rel {}", config.offset_coax)))?
-            .flag_ok()?;
-        //.unwrap_or(Err(anyhow!("Failed to set up coax offset"))?);
+        port.command_reply((1, format!("1 move rel {}", config.offset_coax)))?
+            .flag_ok()
+            .map_err(|_| anyhow!("Failed to set up coax offset"))?;
     } else if config.offset_coax < 0 {
-        zaber_conn
-            .command_reply((1, format!("2 move rel {}", config.offset_coax.abs())))?
-            .flag_ok()?;
-        //.unwrap_or(Err(anyhow!("Failed to set up coax offset"))?);
+        port.command_reply((1, format!("2 move rel {}", config.offset_coax.abs())))?
+            .flag_ok()
+            .map_err(|_| anyhow!("Failed to set up coax offset"))?;
     }
-    task::yield_now().await;
-    zaber_conn.poll_until_idle(1, check::flag_ok())?;
-    //.unwrap_or(Err(anyhow!("Failed to wait for offset axis to be idle"))?);
-    task::yield_now().await;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((1, format!("set maxspeed {}", config.maxspeed_coax)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set max speed for coaxial axis"))?);
-    task::yield_now().await;
+    port.poll_until_idle(1, check::flag_ok())
+        .map_err(|_| anyhow!("Failed to wait for offset axis to be idle"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((1, format!("set limit.max {}", config.limit_max_coax)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set max limit for coaxial axis"))?);
-    task::yield_now().await;
+    port.command_reply((1, format!("set maxspeed {}", config.maxspeed_coax)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set max speed for coaxial axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((1, format!("set limit.min {}", config.limit_min_coax)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set min limit for coaxial axis"))?);
-    task::yield_now().await;
+    port.command_reply((1, format!("set limit.max {}", config.limit_max_coax)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set max limit for coaxial axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((1, format!("set accel {}", config.accel_coax)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set acceleration for coaxial axis"))?);
-    task::yield_now().await;
+    port.command_reply((1, format!("set limit.min {}", config.limit_min_coax)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set min limit for coaxial axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((2, format!("set maxspeed {}", config.maxspeed_cross)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set max speed for cross axis"))?);
-    task::yield_now().await;
+    port.command_reply((1, format!("set accel {}", config.accel_coax)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set acceleration for coaxial axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((2, format!("set limit.max {}", config.limit_max_cross)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set max limit for cross axis"))?);
-    task::yield_now().await;
+    port.command_reply((2, format!("set maxspeed {}", config.maxspeed_cross)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set max speed for cross axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((2, format!("set limit.min {}", config.limit_min_cross)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set min limit for cross axis"))?);
-    task::yield_now().await;
+    port.command_reply((2, format!("set limit.max {}", config.limit_max_cross)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set max limit for cross axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((2, format!("set accel {}", config.accel_cross)))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to set acceleration for cross axis"))?);
-    task::yield_now().await;
+    port.command_reply((2, format!("set limit.min {}", config.limit_min_cross)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set min limit for cross axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    zaber_conn
-        .command_reply((1, "lockstep 1 setup enable 1 2"))?
-        .flag_ok()?;
-    //.unwrap_or(Err(anyhow!("Failed to enable lockstep mode"))?);
+    port.command_reply((2, format!("set accel {}", config.accel_cross)))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to set acceleration for cross axis"))?;
+    let Err(_) = rx_stop.try_recv() else {
+        return Ok(true);
+    };
 
-    Ok(())
+    port.command_reply((1, "lockstep 1 setup enable 1 2"))?
+        .flag_ok()
+        .map_err(|_| anyhow!("Failed to enable lockstep mode"))?;
+
+    Ok(false)
 }
 
 pub fn get_pos_zaber<T: zproto::backend::Backend>(
@@ -251,4 +294,29 @@ pub fn steps_to_mm(steps: u32) -> f64 {
 
 pub fn mm_to_steps(millis: f64) -> u32 {
     (millis * 1000. / MICROSTEP_SIZE) as u32
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::utils::Config;
+
+    use super::MockZaberPort;
+
+    #[test]
+    fn test_init() {
+        let config = Config::default();
+        let (_tx_stop, rx_stop) = tokio::sync::broadcast::channel(1);
+        let port = MockZaberPort::new(&config, rx_stop).unwrap();
+        assert!(port.is_some())
+    }
+
+    #[test]
+    fn test_init_stop() {
+        let config = Config::default();
+        let (tx_stop, rx_stop) = tokio::sync::broadcast::channel(1);
+        tx_stop.send(()).unwrap();
+
+        let port = MockZaberPort::new(&config, rx_stop).unwrap();
+        assert!(port.is_none())
+    }
 }

@@ -135,12 +135,12 @@ mod tests {
     use crossbeam_channel::bounded;
     use utils::{Config, SharedState};
 
-    use crate::utils::ControlStatus;
+    use crate::{adc::MockAdcModule, utils::ControlStatus};
 
     use super::*;
 
     fn prepare_state() -> ExecState {
-        let (_tx_stop, rx_stop) = bounded::<()>(1);
+        let (tx_stop, _rx_stop) = tokio::sync::broadcast::channel(1);
         let (_tx_start, _rx_start) = bounded::<()>(1);
         let target_manual = Arc::new(RwLock::new([0; 2]));
         let shared_state = SharedState {
@@ -176,7 +176,7 @@ mod tests {
                 formula_cross: "v1 + v2".into(),
                 web_port: 0,
             })),
-            rx_stop,
+            tx_stop,
             target_manual,
             out_channel: state_channel,
         };
@@ -185,42 +185,42 @@ mod tests {
     }
 
     // #[test]
-    fn test_run_stop() {
-        let mut state = prepare_state();
+    //fn test_run_stop() {
+    //    let mut state = prepare_state();
 
-        let config = { state.config.read().unwrap().clone() };
-        {
-            let mut out = state.out_channel.write().unwrap();
-            *out = state.shared.clone();
-        }
-        let mut port = init_zaber_mock(&config).unwrap();
+    //    let config = { state.config.read().unwrap().clone() };
+    //    {
+    //        let mut out = state.out_channel.write().unwrap();
+    //        *out = state.shared.clone();
+    //    }
+    //    let adc_module = MockAdcModule::new(&config).unwrap();
 
-        let funcs_voltage_to_target = [
-            evalexpr::build_operator_tree(&config.formula_cross).unwrap(),
-            evalexpr::build_operator_tree(&config.formula_coax).unwrap(),
-        ]
-        .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
-            move |voltages: &[f64; 2]| {
-                let context = evalexpr::context_map! {
-                    "v1" => Value::Float(voltages[0]),
-                    "v2" => Value::Float(voltages[1]),
-                }?;
+    //    let funcs_voltage_to_target = [
+    //        evalexpr::build_operator_tree(&config.formula_cross).unwrap(),
+    //        evalexpr::build_operator_tree(&config.formula_coax).unwrap(),
+    //    ]
+    //    .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
+    //        move |voltages: &[f64; 2]| {
+    //            let context = evalexpr::context_map! {
+    //                "v1" => Value::Float(voltages[0]),
+    //                "v2" => Value::Float(voltages[1]),
+    //            }?;
 
-                let target = f.eval_number_with_context(&context)?;
-                let target = mm_to_steps(target);
+    //            let target = f.eval_number_with_context(&context)?;
+    //            let target = mm_to_steps(target);
 
-                return Ok(target);
-            }
-        });
-        run(
-            &mut state,
-            &mut port,
-            &mut [0., 0.],
-            &mut [read_voltage_mock, read_voltage_mock],
-            funcs_voltage_to_target,
-            get_pos_zaber,
-            [move_coax_zaber, move_cross_zaber],
-        )
-        .unwrap();
-    }
+    //            return Ok(target);
+    //        }
+    //    });
+    //    run(
+    //        &mut state,
+    //        &mut port,
+    //        &mut [0., 0.],
+    //        &mut [read_voltage_mock, read_voltage_mock],
+    //        funcs_voltage_to_target,
+    //        get_pos_zaber,
+    //        [move_coax_zaber, move_cross_zaber],
+    //    )
+    //    .unwrap();
+    //}
 }
