@@ -40,17 +40,21 @@ impl AdcBackend for AdcModule {
     }
 }
 
-pub struct MockAdcModule {}
+pub struct MockAdcModule {
+    fn_read: Box<dyn Fn() -> Result<[f64; 2]> + Send>
+}
 
 impl MockAdcModule {
-    pub fn new() -> Result<Self> {
-        return Ok(MockAdcModule {});
+    pub fn new(
+        fn_read: Box<dyn Fn() -> Result<[f64; 2]> + Send>
+    ) -> Result<Self> {
+        return Ok(MockAdcModule { fn_read });
     }
 }
 
 impl AdcBackend for MockAdcModule {
     fn read_voltage(&mut self) -> Result<[f64; 2]> {
-        return Ok([0.; 2]);
+        return (self.fn_read)();
     }
 }
 
@@ -123,7 +127,7 @@ fn init_adcs() -> Result<[Adc; 2]> {
 
 pub fn get_adc_module(config: &Config) -> Result<Box<dyn AdcBackend + Send>> {
     match config.mock_adc {
-        true => return Ok(Box::new(MockAdcModule::new()?)),
+        true => return Ok(Box::new(MockAdcModule::new(Box::new(|| Ok([0.; 2])))?)),
         false => return Ok(Box::new(AdcModule::new()?)),
     }
 }

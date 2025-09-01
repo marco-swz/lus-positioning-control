@@ -1,4 +1,3 @@
-use chrono::Local;
 use crossbeam_channel::bounded;
 use std::sync::{Arc, RwLock};
 use anyhow::Result;
@@ -14,7 +13,7 @@ use lus_positioning_control::{
 
 fn init_backend(
     config: Config,
-    mut rx_stop: tokio::sync::broadcast::Receiver<()>,
+    rx_stop: tokio::sync::broadcast::Receiver<()>,
 ) -> Result<Option<(Box<dyn AxisBackend + Send>, Box<dyn AdcBackend + Send>)>> {
     let Some(axis_backend) = get_axis_port(&config, rx_stop)? else {
         return Ok(None);
@@ -32,15 +31,7 @@ fn main() {
 
     let target_manual = Arc::new(RwLock::new([0; 2]));
 
-    let shared_state = SharedState {
-        target: [0; 2],
-        position: [0; 2],
-        is_busy: [false; 2],
-        control_state: ControlStatus::Stopped,
-        error: None,
-        timestamp: Local::now(),
-        voltage: [0.; 2],
-    };
+    let shared_state = SharedState::default();
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
     let config = read_config().unwrap_or_else(|_| {
@@ -90,11 +81,10 @@ fn main() {
         }
 
         state.set_status(ControlStatus::Init);
-        let config = { state.config.read().unwrap().clone() };
 
-        let funcs_voltage_to_target = get_voltage_conversion(&mut state, &config).unwrap();
-
+        let funcs_voltage_to_target = get_voltage_conversion(&mut state).unwrap();
         let rx_stop = state.tx_stop.subscribe();
+        let config = { state.config.read().unwrap().clone() };
 
         tracing::debug!("trying to init backend");
         let backend = match init_backend(config.clone(), rx_stop) {

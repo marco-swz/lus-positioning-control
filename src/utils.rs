@@ -192,6 +192,20 @@ pub struct SharedState {
     pub timestamp: DateTime<Local>,
 }
 
+impl Default for SharedState {
+    fn default() -> Self {
+        Self {
+            target: [0; 2],
+            position: [0; 2],
+            is_busy: [false; 2],
+            control_state: ControlStatus::Stopped,
+            error: None,
+            timestamp: Local::now(),
+            voltage: [0.; 2],
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ExecState {
     pub shared: SharedState,
@@ -218,6 +232,20 @@ impl ExecState {
     }
 }
 
+impl Default for ExecState {
+    fn default() -> Self {
+        let (tx_stop, _rx_stop) = tokio::sync::broadcast::channel(1);
+        let shared = SharedState::default();
+        let out_channel = Arc::new(RwLock::new(shared.clone()));
+        Self {
+            shared,
+            out_channel,
+            tx_stop,
+            target_manual: Arc::new(RwLock::new([0; 2])),
+            config: Arc::new(RwLock::new(Config::default())),
+        }
+    }
+}
 
 pub fn read_config() -> Result<Config> {
     match std::fs::read_to_string("config.toml") {

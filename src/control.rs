@@ -9,15 +9,15 @@ use std::sync::Arc;
 
 pub fn get_voltage_conversion(
     state: &mut ExecState,
-    config: &Config,
 ) -> Result<[Box<dyn Fn(&[f64; 2]) -> Result<u32>>; 2]> {
+    let config = { state.config.read().unwrap().clone() };
     match config.control_mode {
         utils::ControlMode::Manual => {
             tracing::debug!("starting in control mode Manual");
             return Ok([
                 Box::new(get_voltage_conversion_manual(state, 0)?),
                 Box::new(get_voltage_conversion_manual(state, 1)?),
-            ])
+            ]);
         }
 
         utils::ControlMode::Tracking => {
@@ -29,7 +29,10 @@ pub fn get_voltage_conversion(
     }
 }
 
-fn get_voltage_conversion_manual(state: &mut ExecState, axis_index: usize) -> Result<impl Fn(&[f64; 2]) -> Result<u32>> {
+fn get_voltage_conversion_manual(
+    state: &mut ExecState,
+    axis_index: usize,
+) -> Result<impl Fn(&[f64; 2]) -> Result<u32>> {
     let targets_shared = Arc::clone(&state.target_manual);
     let func = move |_voltages: &[f64; 2]| {
         let targets = targets_shared.read().unwrap();
@@ -129,98 +132,56 @@ pub fn compute_control(
 
 #[cfg(test)]
 mod tests {
-    use std::{sync::RwLock, time::Duration};
-
-    use chrono::Local;
-    use crossbeam_channel::bounded;
-    use utils::{Config, SharedState};
-
-    use crate::{adc::MockAdcModule, utils::ControlStatus};
+    use crate::{adc::MockAdcModule, zaber::MockZaberPort};
 
     use super::*;
 
-    fn prepare_state() -> ExecState {
-        let (tx_stop, _rx_stop) = tokio::sync::broadcast::channel(1);
-        let (_tx_start, _rx_start) = bounded::<()>(1);
-        let target_manual = Arc::new(RwLock::new([0; 2]));
-        let shared_state = SharedState {
-            target: [0; 2],
-            position: [0; 2],
-            is_busy: [false; 2],
-            control_state: ControlStatus::Stopped,
-            error: None,
-            timestamp: Local::now(),
-            voltage: [0.; 2],
-        };
-        let state_channel = Arc::new(RwLock::new(shared_state.clone()));
-
-        let state = ExecState {
-            shared: shared_state,
-            config: Arc::new(RwLock::new(Config {
-                serial_device: "".to_string(),
-                cycle_time_ms: Duration::from_millis(1),
-                opcua_config_path: "".into(),
-                control_mode: utils::ControlMode::Tracking,
-                limit_max_coax: 1000,
-                limit_min_coax: 0,
-                maxspeed_coax: 10000,
-                accel_coax: 10000,
-                offset_coax: 0,
-                limit_max_cross: 1000,
-                limit_min_cross: 0,
-                maxspeed_cross: 10000,
-                accel_cross: 100000,
-                mock_zaber: true,
-                mock_adc: true,
-                formula_coax: "v1 + v2".into(),
-                formula_cross: "v1 + v2".into(),
-                web_port: 0,
-            })),
-            tx_stop,
-            target_manual,
-            out_channel: state_channel,
-        };
-
-        return state;
+    #[test]
+    fn test_voltage_conversion() {
+        let mut state = ExecState::default();
+        {
+            let mut config = state.config.write().unwrap();
+            config.formula_coax = "v1 * v2".into();
+            config.formula_cross = "v1 + v2".into();
+            config.control_mode = utils::ControlMode::Tracking;
+        }
+        let funcs = get_voltage_conversion(&mut state).unwrap();
+        assert_eq!((funcs[0])(&[5., 2.]).unwrap(), mm_to_steps(10.));
+        assert_eq!((funcs[1])(&[5., 2.]).unwrap(), mm_to_steps(7.));
     }
 
-    // #[test]
-    //fn test_run_stop() {
-    //    let mut state = prepare_state();
+    #[test]
+    fn test_run_stop() {
+        let mut state = ExecState::default();
+        {
+            let mut config = state.config.write().unwrap();
+            config.formula_coax = "v1 * v2".into();
+            config.formula_cross = "v1 + v2".into();
+            config.control_mode = utils::ControlMode::Tracking;
+        }
 
-    //    let config = { state.config.read().unwrap().clone() };
-    //    {
-    //        let mut out = state.out_channel.write().unwrap();
-    //        *out = state.shared.clone();
-    //    }
-    //    let adc_module = MockAdcModule::new(&config).unwrap();
+        let adc_module = MockAdcModule::new(Box::new(|| Ok([5., 2.]))).unwrap();
+        let axis_port = MockZaberPort::new(
+            &state.config.read().unwrap().clone(),
+            state.tx_stop.subscribe(),
+        );
 
-    //    let funcs_voltage_to_target = [
-    //        evalexpr::build_operator_tree(&config.formula_cross).unwrap(),
-    //        evalexpr::build_operator_tree(&config.formula_coax).unwrap(),
-    //    ]
-    //    .map(|f: evalexpr::Node<evalexpr::DefaultNumericTypes>| {
-    //        move |voltages: &[f64; 2]| {
-    //            let context = evalexpr::context_map! {
-    //                "v1" => Value::Float(voltages[0]),
-    //                "v2" => Value::Float(voltages[1]),
-    //            }?;
+        let funcs = get_voltage_conversion(&mut state).unwrap();
+        {
+            let mut out = state.out_channel.write().unwrap();
+            *out = state.shared.clone();
+        }
 
-    //            let target = f.eval_number_with_context(&context)?;
-    //            let target = mm_to_steps(target);
+        state.tx_stop.send(()).unwrap();
 
-    //            return Ok(target);
-    //        }
-    //    });
-    //    run(
-    //        &mut state,
-    //        &mut port,
-    //        &mut [0., 0.],
-    //        &mut [read_voltage_mock, read_voltage_mock],
-    //        funcs_voltage_to_target,
-    //        get_pos_zaber,
-    //        [move_coax_zaber, move_cross_zaber],
-    //    )
-    //    .unwrap();
-    //}
+        run_control_loop(
+            &mut state,
+            Box::new(axis_port.unwrap().unwrap()),
+            Box::new(adc_module),
+            funcs,
+        ).unwrap();
+
+        let out = state.out_channel.read().unwrap();
+        assert_eq!(out.error, None);
+    }
 }
