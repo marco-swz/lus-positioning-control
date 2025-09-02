@@ -40,6 +40,7 @@ fn main() {
         config
     });
 
+
     let mut state = ExecState {
         shared: shared_state.clone(),
         config: Arc::new(RwLock::new(config.clone())),

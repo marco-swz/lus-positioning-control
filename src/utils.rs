@@ -248,23 +248,25 @@ impl Default for ExecState {
 }
 
 pub fn read_config() -> Result<Config> {
-    match std::fs::read_to_string("config.toml") {
+    let config_file = std::env::args().skip(1).next().unwrap_or("config.toml".into());
+
+    match std::fs::read_to_string(&config_file) {
         Ok(config) => {
-            tracing::debug!("`config.toml` successfully read");
+            tracing::debug!("`{}` successfully read", config_file);
 
             match toml::from_str(&config) {
                 Ok(config) => {
-                    tracing::debug!("`config.toml` successfully parsed");
+                    tracing::debug!("`{}` successfully parsed", config_file);
                     Ok(config)
                 }
                 Err(e) => {
-                    tracing::error!("error parsing `config.toml: {}", e);
+                    tracing::error!("error parsing `{}`: {}", config_file, e);
                     Err(e.into())
                 }
             }
         }
         Err(e) => {
-            tracing::error!("error loading `config.toml: {}", e);
+            tracing::error!("error loading `{}`: {}", config_file, e);
             Err(e.into())
         }
     }
