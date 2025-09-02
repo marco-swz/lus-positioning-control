@@ -48,9 +48,10 @@ export default defineConfig({
 
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'cargo run',
+    command: 'cargo run test_config.toml',
     url: 'http://localhost:8085',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: true,
+    // gracefulShutdown: { signal: 'SIGTERM', timeout: 500 },
   },
 });
 

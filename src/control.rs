@@ -117,7 +117,7 @@ pub fn compute_control(
 
         tracing::debug!("Position {}: target={} actual={}", i, target, positions[i]);
 
-        if target > limits[i][0] && target < limits[i][1] && target != positions[i] {
+        if target >= limits[i][0] && target <= limits[i][1] && target != positions[i] {
             axis_backend.move_axis(i + 1, target)?
         }
     }
