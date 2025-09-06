@@ -1,6 +1,6 @@
 use crate::{
     adc::AdcBackend,
-    utils::{self, Config, ExecState},
+    utils::{self, ExecState},
     zaber::{mm_to_steps, AxisBackend},
 };
 use anyhow::Result;

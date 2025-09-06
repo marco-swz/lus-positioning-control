@@ -6,7 +6,7 @@ use lus_positioning_control::{
     adc::{get_adc_module, AdcBackend},
     control::{get_voltage_conversion, run_control_loop},
     opcua::run_opcua,
-    utils::{read_config, write_config, Config, ControlStatus, ExecState, SharedState},
+    utils::{read_config, Config, ControlStatus, ExecState, SharedState},
     web::{run_web_server, WebState},
     zaber::{get_axis_port, AxisBackend},
 };

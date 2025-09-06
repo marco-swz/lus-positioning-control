@@ -1,6 +1,6 @@
 const MICROSTEP_SIZE = 0.49609375; //µm
 const MAX_POS = 201574; // microsteps
-var globals = {
+const globals = {
     /** @type {?WebSocket} */
     socket: null,
     /** @type {'Tracking' | 'Manual'} */
@@ -8,6 +8,18 @@ var globals = {
     /** @type {?string} */
     errorMessage: null,
     stopTriggered: false,
+    /** @type {Array<HTMLInputElement>} */
+    $$targets: null,
+    /** @type {Array<HTMLInputElement>} */
+    $$positions: null,
+    /** @type {Array<HTMLInputElement>} */
+    $$sliders: null,
+    /** @type {Array<HTMLInputElement>} */
+    $$voltages: null,
+    /** @type {HTMLButtonElement} */
+    $btnStart: null,
+    /** @type {HTMLButtonElement} */
+    $btnStop: null,
 };
 
 
@@ -79,8 +91,9 @@ function handleClickSaveConfig() {
 }
 
 function handleClickStart() {
-    document.querySelector('#inp-pos-target-coax').value = steps2mm(document.querySelector('#inp-pos-coax').value);
-    document.querySelector('#inp-pos-target-cross').value = steps2mm(document.querySelector('#inp-pos-cross').value);
+    globals.$$targets
+        .forEach(($target, i) => $target.value = steps2mm(globals.$$sliders[i].value));
+
     fetch('/start', {
         method: 'POST',
     }).then(() => {
@@ -117,8 +130,8 @@ function handleChangeTarget(axis) {
 
 function sendTargetPosition() {
     console.assert(globals.socket != null, 'Websocket not initialized');
-    const posCoax = document.querySelector('#inp-pos-coax').value
-    const posCross = document.querySelector('#inp-pos-cross').value
+    const posCoax = globals.$$sliders[0].value;
+    const posCross = globals.$$sliders[1].value;
     globals.socket.send(posCoax + ' ' + posCross);
 }
 
@@ -128,13 +141,13 @@ function loadConfig() {
         .then(x => {
             document.querySelector('#inp-pos-min-coax').value = steps2mm(x['limit_min_coax']);
             document.querySelector('#inp-pos-max-coax').value = steps2mm(x['limit_max_coax']);
-            document.querySelector('#inp-pos-coax').min = x['limit_min_coax'];
-            document.querySelector('#inp-pos-coax').max = x['limit_max_coax'];
+            globals.$$sliders[0].min = x['limit_min_coax'];
+            globals.$$sliders[0].max = x['limit_max_coax'];
 
             document.querySelector('#inp-pos-min-cross').value = steps2mm(x['limit_min_cross']);
             document.querySelector('#inp-pos-max-cross').value = steps2mm(x['limit_max_cross']);
-            document.querySelector('#inp-pos-cross').min = x['limit_min_cross'];
-            document.querySelector('#inp-pos-cross').max = x['limit_max_cross'];
+            globals.$$sliders[1].min = x['limit_min_cross'];
+            globals.$$sliders[1].max = x['limit_max_cross'];
 
             for (let [key, val] of Object.entries(x)) {
                 if (['limit_max_coax', 'limit_min_coax', 'limit_min_cross', 'limit_max_cross'].includes(key)) {
@@ -180,60 +193,53 @@ function handleClickChangeMode() {
 
 function connectWebsocket() {
     globals.socket = new WebSocket(`ws://${IP_ADDR}:${PORT}/ws`);
-    let $btnStart = document.querySelector('#btn-start');
-    let $btnStop = document.querySelector('#btn-stop');
 
     if (globals.errorMessage != null) {
         resetError();
     }
+
+    globals.$$targets.forEach(($target, i) => $target.value = steps2mm(globals.$$sliders[i].value))
 
     globals.socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data);
         const state = data['control_state'];
         document.querySelector('#control_state').value = state;
 
-        if (data['busy_coax']) {
-            document.querySelector('#inp-pos-actual-coax').classList.add('working');
-        } else {
-            document.querySelector('#inp-pos-actual-coax').classList.remove('working');
+        for (let i = 0; i < 2; ++i) {
+            if (data['is_busy'][i]) {
+                globals.$$positions[i].classList.add('working');
+            } else {
+                globals.$$positions[i].classList.remove('working');
+            }
         }
-        if (data['busy_cross']) {
-            document.querySelector('#inp-pos-actual-cross').classList.add('working');
-        } else {
-            document.querySelector('#inp-pos-actual-cross').classList.remove('working');
-        }
+
         switch (state) {
             case 'Running':
-                $btnStart.hidden = true;
-                $btnStop.hidden = false;
-                document.querySelector('#inp-voltage1').value = data['voltage'][0];
-                document.querySelector('#inp-voltage2').value = data['voltage'][1];
-                document.querySelector('#inp-pos-actual-coax').value = steps2mm(data['position'][0]);
-                document.querySelector('#inp-pos-actual-cross').value = steps2mm(data['position'][1]);
-        
-                if (globals.controlMode === 'Tracking') {
-                    document.querySelector('#inp-pos-coax').disabled = true;
-                    document.querySelector('#inp-pos-cross').disabled = true;
-                    document.querySelector('#inp-pos-target-coax').disabled = true;
-                    document.querySelector('#inp-pos-target-cross').disabled = true;
-                    document.querySelector('#inp-pos-target-coax').value = steps2mm(data['target'][0]);
-                    document.querySelector('#inp-pos-target-cross').value = steps2mm(data['target'][1]);
-                } else {
-                    document.querySelector('#inp-pos-coax').disabled = false;
-                    document.querySelector('#inp-pos-cross').disabled = false;
-                    document.querySelector('#inp-pos-target-coax').disabled = false;
-                    document.querySelector('#inp-pos-target-cross').disabled = false;
+                globals.$btnStart.hidden = true;
+                globals.$btnStop.hidden = false;
+                for (let i = 0; i < 2; ++i) {
+                    globals.$$positions[i].value = steps2mm(data['position'][i]);
+                    globals.$$voltages[i].value = data['voltage'][i];
+
+                    if (globals.controlMode === 'Tracking') {
+                        globals.$$sliders[i].disabled = true;
+                        globals.$$targets[i].disabled = true;
+                        globals.$$targets[i].value = steps2mm(data['target'][i]);
+                    } else {
+                        globals.$$sliders[i].disabled = false;
+                        globals.$$targets[i].disabled = false;
+                    }
                 }
                 break;
             case 'Error':
-                if(globals.errorMessage !== data['error']) {
+                if (globals.errorMessage !== data['error']) {
                     globals.errorMessage = data['error'];
                     document.querySelector('#btn-show-error').style.visibility = 'visible';
                     alert(globals.errorMessage);
                 }
             default:
-                $btnStart.hidden = false;
-                $btnStop.hidden = true;
+                globals.$btnStart.hidden = false;
+                globals.$btnStop.hidden = true;
                 initInputs('Stopped');
         }
     });
@@ -244,8 +250,8 @@ function connectWebsocket() {
     });
 
     globals.socket.addEventListener('close', () => {
-        document.querySelector('#btn-stop').hidden = true;
-        document.querySelector('#btn-start').hidden = false;
+        globals.$btnStop.hidden = true;
+        globals.$btnStart.hidden = false;
 
         document.querySelector('#ui-status').setAttribute('value', 'disconnected');
         document.querySelector('#ui-status').value = 'disconnected';
@@ -262,16 +268,14 @@ function connectWebsocket() {
  */
 function initInputs(state) {
     document.querySelector('#control_state').value = state;
-    document.querySelector('#inp-pos-target-coax').value = '-';
-    document.querySelector('#inp-pos-target-cross').value = '-';
-    document.querySelector('#inp-pos-actual-coax').value = '-';
-    document.querySelector('#inp-pos-actual-cross').value = '-';
-    document.querySelector('#inp-voltage1').value = '-';
-    document.querySelector('#inp-voltage2').value = '-';
-    document.querySelector('#inp-pos-coax').disabled = true;
-    document.querySelector('#inp-pos-cross').disabled = true;
-    document.querySelector('#inp-pos-target-coax').disabled = true;
-    document.querySelector('#inp-pos-target-cross').disabled = true;
+
+    for (let i = 0; i < 2; ++i) {
+        globals.$$targets[i].value = '-';
+        globals.$$positions[i].value = '-';
+        globals.$$voltages[i].value = '-';
+        globals.$$sliders[i].disabled = true;
+        globals.$$targets[i].disabled = true;
+    }
 }
 
 function steps2mm(steps) {
@@ -300,17 +304,29 @@ function accel2steps(accel) {
 
 
 document.addEventListener('DOMContentLoaded', () => {
-    const $inpTargetCoax = document.querySelector('#inp-pos-target-coax');
-    const $sliderTargetCoax = document.querySelector('#inp-pos-coax');
-    $sliderTargetCoax.addEventListener('input', (e) => {
-        $inpTargetCoax.value = steps2mm(e.currentTarget.value);
-    })
-
-    const $inpTargetCross = document.querySelector('#inp-pos-target-cross');
-    const $sliderTargetCross = document.querySelector('#inp-pos-cross');
-    $sliderTargetCross.addEventListener('input', (e) => {
-        $inpTargetCross.value = steps2mm(e.currentTarget.value);
-    })
+    globals.$btnStart = document.querySelector('#btn-start');
+    globals.$btnStop = document.querySelector('#btn-stop');
+    globals.$$sliders = [
+        document.querySelector('#inp-pos-coax'),
+        document.querySelector('#inp-pos-cross')
+    ];
+    globals.$$targets = [
+        document.querySelector('#inp-pos-target-coax'),
+        document.querySelector('#inp-pos-target-cross'),
+    ];
+    globals.$$voltages = [
+        document.querySelector('#inp-voltage1'),
+        document.querySelector('#inp-voltage2'),
+    ];
+    globals.$$positions = [
+        document.querySelector('#inp-pos-actual-coax'),
+        document.querySelector('#inp-pos-actual-cross'),
+    ];
+    for (let i = 0; i < 2; ++i) {
+        globals.$$sliders[i].addEventListener('input', (e) => {
+            globals.$$targets[i].value = steps2mm(e.currentTarget.value);
+        })
+    }
 
     initInputs('Stopped');
     loadConfig();
