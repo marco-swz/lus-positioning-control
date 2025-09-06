@@ -44,7 +44,6 @@ function handleClickSaveConfig() {
         data[key] = val;
     }
     data['control_mode'] = globals.controlMode;
-    data['mock_zaber'] = false;
 
     fetch('/config', {
         method: 'POST',

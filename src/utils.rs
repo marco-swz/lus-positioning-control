@@ -94,6 +94,10 @@ fn default_cycle_time_ms() -> Duration {
     Duration::from_millis(500)
 }
 
+pub fn default_config_path() -> String {
+    "config.toml".into()
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -134,6 +138,8 @@ pub struct Config {
     pub formula_cross: String,
     #[serde(default = "default_web_port")]
     pub web_port: u32,
+    #[serde(default = "default_config_path")]
+    pub config_path: String,
 }
 
 impl Config {
@@ -157,6 +163,7 @@ impl Config {
             formula_coax: default_formula_coax(),
             formula_cross: default_formula_cross(),
             web_port: default_web_port(),
+            config_path: default_config_path(),
         }
     }
 }
@@ -247,29 +254,31 @@ impl Default for ExecState {
     }
 }
 
-pub fn read_config() -> Result<Config> {
-    let config_file = std::env::args().skip(1).next().unwrap_or("config.toml".into());
+pub fn read_config() -> Config {
+    let config_file = std::env::args().skip(1).next().unwrap_or(default_config_path());
 
-    match std::fs::read_to_string(&config_file) {
+    let mut config = match std::fs::read_to_string(&config_file) {
         Ok(config) => {
             tracing::debug!("`{}` successfully read", config_file);
 
-            match toml::from_str(&config) {
+            match toml::from_str::<Config>(&config) {
                 Ok(config) => {
                     tracing::debug!("`{}` successfully parsed", config_file);
-                    Ok(config)
+                    config
                 }
                 Err(e) => {
                     tracing::error!("error parsing `{}`: {}", config_file, e);
-                    Err(e.into())
+                    Config::default()
                 }
             }
         }
         Err(e) => {
             tracing::error!("error loading `{}`: {}", config_file, e);
-            Err(e.into())
+            Config::default()
         }
-    }
+    };
+    config.config_path = config_file;
+    return config;
 }
 
 pub fn write_config(config_new: &Config) -> Result<()> {
@@ -279,7 +288,7 @@ pub fn write_config(config_new: &Config) -> Result<()> {
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .open("config.toml")
+                .open(config_new.config_path.clone())
             {
                 Ok(mut file) => match file.write_all(config.as_bytes()) {
                     Ok(_) => {

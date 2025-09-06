@@ -18,7 +18,7 @@ use crossbeam_channel::Sender;
 use futures::{SinkExt, StreamExt};
 use serde_json;
 
-use crate::utils::{self, write_config, Config, ControlMode, ControlStatus, SharedState};
+use crate::utils::{self, default_config_path, write_config, Config, ControlMode, ControlStatus, SharedState};
 
 const STYLE: &str = include_str!("style.css");
 const SCRIPT: &str = include_str!("script.js");
@@ -192,14 +192,14 @@ async fn handle_post_config(
             .or(Err(anyhow!("accel_cross: Unable to parse accel_cross")))?,
         mock_zaber: map_new
             .get("mock_zaber")
-            .ok_or(anyhow!("mock_zaber: Missing parameter mock_zaber"))?
+            .unwrap_or(&"false".to_string())
             .parse()
-            .or(Err(anyhow!("mock_zaber: Unable to parse mock_zaber")))?,
+            .unwrap_or(false),
         mock_adc: map_new
             .get("mock_adc")
-            .ok_or(anyhow!("mock_adc: Missing parameter mock_adc"))?
+            .unwrap_or(&"false".to_string())
             .parse()
-            .or(Err(anyhow!("mock_adc: Unable to parse mock_adc")))?,
+            .unwrap_or(false),
         formula_coax: map_new
             .get("formula_coax")
             .ok_or(anyhow!("formula_coax: Missing parameter formula_coax"))?
@@ -215,6 +215,11 @@ async fn handle_post_config(
             .ok_or(anyhow!("web_port: Missing parameter web_port"))?
             .parse()
             .or(Err(anyhow!("web_port: Unable to parse web_port")))?,
+        config_path: map_new
+            .get("config_path")
+            .unwrap_or(&default_config_path())
+            .parse()
+            .unwrap_or(default_config_path()),
     };
 
     // If the user changes the config twice without starting

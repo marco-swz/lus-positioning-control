@@ -34,12 +34,7 @@ fn main() {
     let shared_state = SharedState::default();
     let state_channel = Arc::new(RwLock::new(shared_state.clone()));
 
-    let config = read_config().unwrap_or_else(|_| {
-        let config = Config::default();
-        write_config(&config).unwrap();
-        config
-    });
-
+    let config = read_config();
 
     let mut state = ExecState {
         shared: shared_state.clone(),
