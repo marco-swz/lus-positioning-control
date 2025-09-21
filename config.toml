@@ -1,4 +1,4 @@
-cycle_time_ms = 5
+cycle_time_ms = 500
 serial_device = "/dev/ttyACM0"
 opcua_config_path = "opcua_config.conf"
 control_mode = "Tracking"
@@ -11,8 +11,8 @@ limit_max_cross = 201574
 limit_min_cross = 0
 maxspeed_cross = 153600
 accel_cross = 205
-mock_zaber = false
-mock_adc = true
+mock_zaber = true
+mock_adc = false
 formula_coax = "v1"
 formula_cross = "10"
 web_port = 8085

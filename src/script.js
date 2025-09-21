@@ -203,7 +203,12 @@ function connectWebsocket() {
     globals.socket.addEventListener("message", (event) => {
         const data = JSON.parse(event.data);
         const state = data['control_state'];
-        document.querySelector('#control_state').value = state;
+        let stateText = state;
+        if (state === 'Init') {
+            stateText = 'Initialization';
+        }
+        document.querySelector('#control_state').value = stateText;
+        document.querySelector('#control_state').setAttribute('state', state);
 
         for (let i = 0; i < 2; ++i) {
             if (data['is_busy'][i]) {
@@ -214,6 +219,14 @@ function connectWebsocket() {
         }
 
         switch (state) {
+            case 'Init':
+                globals.$btnStart.hidden = true;
+                globals.$btnStop.hidden = false;
+                for (let i = 0; i < 2; ++i) {
+                    globals.$$positions[i].value = steps2mm(data['position'][i]);
+                    globals.$$targets[i].value = steps2mm(data['target'][i]);
+                }
+                break;
             case 'Running':
                 globals.$btnStart.hidden = true;
                 globals.$btnStop.hidden = false;

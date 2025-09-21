@@ -22,6 +22,22 @@ select {
     border-radius: 4px;
     padding: 3px 7px;
     outline: none;
+
+    &[state=Error] {
+        color: red;
+    }
+
+    &[state=Init] {
+        color: blue;
+    }
+
+    &[state=Running] {
+        color: forestgreen;
+    }
+
+    &[state=Stopped] {
+        color: black;
+    }
 }
 
 button {

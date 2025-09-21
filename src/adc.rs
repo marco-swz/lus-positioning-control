@@ -41,13 +41,11 @@ impl AdcBackend for AdcModule {
 }
 
 pub struct MockAdcModule {
-    fn_read: Box<dyn Fn() -> Result<[f64; 2]> + Send>
+    fn_read: Box<dyn Fn() -> Result<[f64; 2]> + Send>,
 }
 
 impl MockAdcModule {
-    pub fn new(
-        fn_read: Box<dyn Fn() -> Result<[f64; 2]> + Send>
-    ) -> Result<Self> {
+    pub fn new(fn_read: Box<dyn Fn() -> Result<[f64; 2]> + Send>) -> Result<Self> {
         return Ok(MockAdcModule { fn_read });
     }
 }
@@ -78,22 +76,26 @@ fn init_adcs() -> Result<[Adc; 2]> {
         let device = libftd2xx::Ftdi::with_index(i)?;
         let device = libftd2xx::Ft232h::try_from(device)?;
         let hal = FtHal::init_freq(device, 400_000)?;
-        let Ok(i2c) = hal.i2c() else {
-            return Err(anyhow!("Failed to create I2C device"));
-        };
+        let i2c = hal
+            .i2c()
+            .map_err(|e| anyhow!("Failed to create I2C device: {:?}", e))?;
         let adc = Ads1x1x::new_ads1115(i2c, TargetAddr::default());
 
-        let Ok(adc) = adc.into_continuous() else {
-            return Err(anyhow!("Failed set ADC continuous mode"));
-        };
-        let Ok(mut adc) = adc.into_one_shot() else {
-            return Err(anyhow!("Failed set ADC one shot mode"));
-        };
+        let mut adc = adc
+            .into_continuous()
+            .map_err(|_e| anyhow!("Failed set ADC continuous mode: TimeoutError"))?;
 
-        let Ok(val) = nb::block!(adc.read(DifferentialA2A3)) else {
-            return Err(anyhow!("Failed to read index voltage"));
-        };
+        adc.select_channel(DifferentialA2A3)
+            .map_err(|e| anyhow!("Failed to set channel to differentialA2A3: {:?}", e))?;
 
+        // The current conversion must finish, before the channel change is in effect.
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+
+        let val = adc
+            .read()
+            .map_err(|e| anyhow!("Failed to read index voltage: {:?}", e))?;
+
+        dbg!(i, val);
         let idx = match val {
             ..10 => 1,
             10.. => 2,
@@ -101,15 +103,14 @@ fn init_adcs() -> Result<[Adc; 2]> {
 
         tracing::debug!("adc index value: {}", val);
 
-        let Ok(mut adc) = adc.into_continuous() else {
-            return Err(anyhow!("Failed set ADC continuous mode"));
-        };
-        let Ok(_) = adc.select_channel(DifferentialA0A1) else {
-            return Err(anyhow!("Failed to set channel to differentialA0A1"));
-        };
-        let Ok(_) = adc.set_full_scale_range(FullScaleRange::Within4_096V) else {
-            return Err(anyhow!("Failed set ADC range"));
-        };
+        adc.select_channel(DifferentialA0A1)
+            .map_err(|e| anyhow!("Failed to set channel to differentialA0A1: {:?}", e))?;
+
+        // The current conversion must finish, before the channel change is in effect.
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+
+        adc.set_full_scale_range(FullScaleRange::Within4_096V)
+            .map_err(|e| anyhow!("Failed set ADC range: {:?}", e))?;
 
         return Ok((adc, idx));
     });
