@@ -98,7 +98,7 @@ fn init_adcs(
         // The current conversion must finish, before the channel change is in effect.
         let start_time = std::time::Instant::now();
         loop {
-            if std::time::Instant::now().duration_since(start_time) > std::time::Duration::from_millis(1000) {
+            if std::time::Instant::now().duration_since(start_time) > std::time::Duration::from_millis(100) {
                 break;
             }
 
@@ -126,7 +126,7 @@ fn init_adcs(
         // The current conversion must finish, before the channel change is in effect.
         let start_time = std::time::Instant::now();
         loop {
-            if std::time::Instant::now().duration_since(start_time) > std::time::Duration::from_millis(1000) {
+            if std::time::Instant::now().duration_since(start_time) > std::time::Duration::from_millis(100) {
                 break;
             }
 
