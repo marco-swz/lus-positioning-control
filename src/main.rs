@@ -13,12 +13,14 @@ use lus_positioning_control::{
 
 fn init_backend(
     config: Config,
-    rx_stop: tokio::sync::broadcast::Receiver<()>,
+    tx_stop: &tokio::sync::broadcast::Sender<()>,
 ) -> Result<Option<(Box<dyn AxisBackend + Send>, Box<dyn AdcBackend + Send>)>> {
-    let Some(axis_backend) = get_axis_port(&config, rx_stop)? else {
+    let Some(axis_backend) = get_axis_port(&config, tx_stop.subscribe())? else {
         return Ok(None);
     };
-    let adc_backend = get_adc_module(&config)?;
+    let Some(adc_backend) = get_adc_module(&config, tx_stop.subscribe())? else {
+        return Ok(None);
+    };
 
     return Ok(Some((axis_backend, adc_backend)));
 }
@@ -79,11 +81,10 @@ fn main() {
         state.set_status(ControlStatus::Init);
 
         let funcs_voltage_to_target = get_voltage_conversion(&mut state).unwrap();
-        let rx_stop = state.tx_stop.subscribe();
         let config = { state.config.read().unwrap().clone() };
 
         tracing::debug!("trying to init backend");
-        let backend = match init_backend(config.clone(), rx_stop) {
+        let backend = match init_backend(config.clone(), &state.tx_stop) {
             Err(e) => {
                 state.set_error(e.to_string());
                 continue;

@@ -22,9 +22,13 @@ pub struct AdcModule {
 }
 
 impl AdcModule {
-    pub fn new() -> Result<Self> {
-        let [adc1, adc2] = init_adcs()?;
-        return Ok(AdcModule { adc1, adc2 });
+    pub fn new(
+        rx_stop: tokio::sync::broadcast::Receiver<()>,
+    ) -> Result<Option<Self>> {
+        match init_adcs(rx_stop)? {
+            Some([adc1, adc2]) => Ok(Some(AdcModule { adc1, adc2 })),
+            None => Ok(None),
+        }
     }
 }
 
@@ -56,7 +60,9 @@ impl AdcBackend for MockAdcModule {
     }
 }
 
-fn init_adcs() -> Result<[Adc; 2]> {
+fn init_adcs(
+    mut rx_stop: tokio::sync::broadcast::Receiver<()>,
+) -> Result<Option<[Adc; 2]>> {
     tracing::debug!("initializing adcs");
     match libftd2xx::num_devices()? {
         0..2 => {
@@ -72,7 +78,8 @@ fn init_adcs() -> Result<[Adc; 2]> {
         }
     };
 
-    let adcs: [Result<(Adc, u8)>; 2] = [0, 1].map(|i| {
+    let mut adcs = [None, None];
+    for i in 0..=1 {
         let device = libftd2xx::Ftdi::with_index(i)?;
         let device = libftd2xx::Ft232h::try_from(device)?;
         let hal = FtHal::init_freq(device, 400_000)?;
@@ -89,13 +96,23 @@ fn init_adcs() -> Result<[Adc; 2]> {
             .map_err(|e| anyhow!("Failed to set channel to differentialA2A3: {:?}", e))?;
 
         // The current conversion must finish, before the channel change is in effect.
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let start_time = std::time::Instant::now();
+        loop {
+            if std::time::Instant::now().duration_since(start_time) > std::time::Duration::from_millis(1000) {
+                break;
+            }
+
+            if rx_stop.try_recv().is_ok() {
+                return Ok(None);
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
 
         let val = adc
             .read()
             .map_err(|e| anyhow!("Failed to read index voltage: {:?}", e))?;
 
-        dbg!(i, val);
         let idx = match val {
             ..10 => 1,
             10.. => 2,
@@ -107,29 +124,47 @@ fn init_adcs() -> Result<[Adc; 2]> {
             .map_err(|e| anyhow!("Failed to set channel to differentialA0A1: {:?}", e))?;
 
         // The current conversion must finish, before the channel change is in effect.
-        std::thread::sleep(std::time::Duration::from_millis(1000));
+        let start_time = std::time::Instant::now();
+        loop {
+            if std::time::Instant::now().duration_since(start_time) > std::time::Duration::from_millis(1000) {
+                break;
+            }
+
+            if rx_stop.try_recv().is_ok() {
+                return Ok(None);
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
 
         adc.set_full_scale_range(FullScaleRange::Within4_096V)
             .map_err(|e| anyhow!("Failed set ADC range: {:?}", e))?;
 
-        return Ok((adc, idx));
-    });
+        adcs[i as usize] = Some((adc, idx));
+    }
 
     let [adc1, adc2] = adcs;
-    let (adc1, idx1) = adc1?;
-    let (adc2, idx2) = adc2?;
+    // It should be impossible for them to be `None`
+    let (adc1, idx1) = adc1.unwrap();
+    let (adc2, idx2) = adc2.unwrap();
 
     return Ok(match [idx1, idx2] {
-        [1, 2] => [adc1, adc2],
-        [2, 1] => [adc2, adc1],
+        [1, 2] => Some([adc1, adc2]),
+        [2, 1] => Some([adc2, adc1]),
         _ => Err(anyhow!("Invalid adc configuration"))?,
     });
 }
 
-pub fn get_adc_module(config: &Config) -> Result<Box<dyn AdcBackend + Send>> {
+pub fn get_adc_module(
+    config: &Config,
+    rx_stop: tokio::sync::broadcast::Receiver<()>,
+) -> Result<Option<Box<dyn AdcBackend + Send>>> {
     match config.mock_adc {
-        true => return Ok(Box::new(MockAdcModule::new(Box::new(|| Ok([0.; 2])))?)),
-        false => return Ok(Box::new(AdcModule::new()?)),
+        true => return Ok(Some(Box::new(MockAdcModule::new(Box::new(|| Ok([0.; 2])))?))),
+        false => return Ok(match AdcModule::new(rx_stop)? {
+            Some(module) => Some(Box::new(module)),
+            None => None,
+        }),
     }
 }
 
