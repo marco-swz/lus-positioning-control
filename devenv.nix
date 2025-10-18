@@ -16,6 +16,7 @@ in {
   cachix.enable = false;
 
   packages = with pkgs; [
+    git
     cmake
     pkg-config
     pkgsStatic.openssl.dev
